@@ -1,0 +1,5 @@
+*_templ.go
+*.sqlite
+*.db
+vidcache
+*.log

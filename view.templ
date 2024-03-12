@@ -1,0 +1,314 @@
+package mpvwebkaraoke
+
+import (
+    nurl "net/url"
+    "time"
+    "fmt"
+)
+
+func urlDomain(url string) string {
+    u, err := nurl.Parse(url)
+    if err != nil {
+        return ""
+    }
+    return u.Host
+}
+
+// func getSessionID(ctx context.Context) string {
+//     session, ok := ctx.Value(sessionKey).(Session)
+//     if !ok {
+//         return ""
+//     }
+//     return session.ID
+// }
+
+func adminSession(ctx context.Context) bool {
+    session, ok := ctx.Value(sessionKey).(Session)
+    return ok && session.Admin
+}
+
+// func getSessionName(ctx context.Context) string {
+//     session, ok := ctx.Value(sessionKey).(Session)
+//     if !ok {
+//         return ""
+//     }
+//     return session.UserName
+// }
+
+templ submitPreview(title, url, lyricsURL, thumbnailURL string, duration time.Duration) {
+    <a href="/submit" style="text-align: center; display: block; margin-bottom: 1em; text-decoration: none; color: #007bff;">Back to submit</a>
+    <form action="/submit" method="post">
+        <img src={thumbnailURL} alt="Thumbnail" width="300" style="margin-bottom: 1em"/>
+        <label for="title">Title</label>
+        <input type="text" name="title" value={title} required/>
+        <label for="url">URL</label>
+        <input type="url" name="url" value={url} required/>
+        <label for="lyricsURL">Lyrics URL</label>
+        <input type="url" name="lyricsURL" value={lyricsURL} placeholder="Lyrics URL (optional)"/>
+        <input type="hidden" name="duration" value={duration.String()}/>
+        <input type="submit" value="Confirm"/>
+    </form>
+}
+
+templ postPage() {
+    <html>
+        <head>
+            <title>MPV Web Karaoke</title>
+            <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+            <style>
+                body {
+                    font-family: Arial, sans-serif;
+                    max-width: 1000px;
+                    margin: 0 auto;
+                    padding: 1em;
+                }
+
+                h1 {
+                    text-align: center;
+                }
+
+                form {
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                }
+
+                input {
+                    margin: 0.5em;
+                    padding: 0.5em;
+                    width: 100%;
+                    max-width: 300px;
+                }
+
+                input[type="submit"] {
+                    background-color: #007bff;
+                    color: white;
+                    border: none;
+                    cursor: pointer;
+                }
+                
+                input[type="submit"]:hover {
+                    background-color: #0056b3;
+                }
+
+
+                input[type="submit"]:disabled {
+                    background-color: #ccc;
+                    cursor: not-allowed;
+                }
+
+                label {
+                    text-align: left;
+                    width: 100%;
+                    max-width: 300px;
+                }
+            </style>
+        </head>
+        <body>
+            <h1>Submit</h1>
+            <a href="/" style="text-align: center; display: block; margin-bottom: 1em; text-decoration: none; color: #007bff;">Back to queue</a>
+            <form hx-post="/preview" hx-swap="outerHTML" hx-disabled-elt="input[type=submit]">
+                <input type="url" name="url" placeholder="URL" required/>
+                <input type="url" name="lyricsURL" placeholder="Lyrics URL (optional)"/>
+                <span class="htmx-indicator">Loading preview...</span>
+                <input type="submit" value="Submit"/>
+            </form>
+        </body>
+    </html>
+}
+
+templ songTable(songs []Song) {
+    <table class="song-table" id="queue">
+        <colgroup>
+            if adminSession(ctx) {
+                <col style="width: 15%"/>
+                <col style="width: 55%"/>
+                <col style="width: 10%"/>
+                <col style="width: 10%"/>
+                <col style="width: 10%"/>
+            } else {
+                <col style="width: 20%"/>
+                <col style="width: 60%"/>
+                <col style="width: 10%"/>
+                <col style="width: 10%"/>
+            }
+        </colgroup>
+        <tr>
+            <th>Requester</th>
+            <th>Song</th>
+            <th>Lyrics</th>
+            <th>Length</th>
+            if adminSession(ctx) {
+                <th>Revoke</th>
+            }
+        </tr>
+        for _, song := range songs {
+            @songRow(song)
+        }
+    </table>
+    <div sse-swap="append-queue" hx-target="#queue" hx-swap="beforeend"></div>
+}
+
+templ songRow(song Song) {
+    <tr sse-swap={fmt.Sprintf("remove-queue-%d",  song.ID)} hx-swap="delete">
+        <td>{song.Requester.UserName}</td>
+        <td><a href={templ.URL(song.URL)} target="_blank">{song.Title}</a></td>
+        if song.LyricsURL.Valid {
+            <td>
+                <a href={templ.URL(song.LyricsURL.String)} target="_blank">
+                    {urlDomain(song.LyricsURL.String)}
+                </a>
+            </td>
+        } else {
+            <td></td>
+        }
+        <td>{song.Duration.String()}</td>
+        if adminSession(ctx) {
+            <td>
+                <form
+                    hx-delete={fmt.Sprintf("/revoke/%d", song.ID)}
+                    hx-swap="none"
+                    hx-confirm="Are you sure?"
+                    class="revoke-form"
+                >
+                    <input type="submit" value="Delete"/>
+                </form>
+            </td>
+        }
+    </tr>
+}
+
+templ queueHome(songs []Song) {
+    <html>
+        <head>
+            <title>MPV Web Karaoke</title>
+            <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+            <script src="https://unpkg.com/htmx.org/dist/ext/sse.js"></script>
+            <meta name="viewport" content="width=device-width, initial-scale=1"/>
+            <meta charset="utf-8"/>
+            <style>
+                html {
+                    background-color: #f2f2f2;
+                }
+
+                body {
+                    font-family: Arial, sans-serif;
+                    max-width: 1000px;
+                    margin: 0 auto;
+                    padding: 1em;
+                }
+
+                .queue-head {
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                }
+
+                .link-button {
+                    padding: 0.5em 1em;
+                    background-color: #007bff;
+                    color: white;
+                    text-decoration: none;
+                    height: fit-content;
+                }
+
+                .link-button:hover {
+                    background-color: #0056b3;
+                }
+
+                .song-table {
+                    width: 100%;
+                    border-collapse: collapse;
+                    text-align: center;
+                }
+
+                .song-table th, .song-table td {
+                    border: 1px solid #ddd;
+                    padding: 0.5em;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                    white-space: nowrap;
+                }
+                
+                .song-table tr:first-child th {
+                    background-color: #e8e8e8;
+                }
+                
+  
+                .revoke-form {
+                    display: flex;
+                    justify-content: center;
+                    margin: 0;
+                }
+
+                .revoke-form input[type="submit"] {
+                    background-color: #dc3545;
+                    color: white;
+                    border: none;
+                    cursor: pointer;
+                }
+            </style>
+        </head>
+        <body>
+            <div class="queue-head">
+                <h1>Queue</h1>
+                <a class="link-button" href="/submit">New</a>
+            </div>
+            <div hx-ext="sse" sse-connect="/sse" sse-swap="rerender-queue">
+                @songTable(songs)
+            </div>
+        </body>
+    </html>
+}
+
+templ registerPage() {
+    <html>
+        <head>
+            <title>MPV Web Karaoke</title>
+            <style>
+                body {
+                    font-family: Arial, sans-serif;
+                    max-width: 1000px;
+                    margin: 0 auto;
+                    padding: 1em;
+                }
+
+                h1 {
+                    text-align: center;
+                }
+
+                form {
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                }
+
+                input {
+                    margin: 0.5em;
+                    padding: 0.5em;
+                    width: 100%;
+                    max-width: 300px;
+                }
+
+                input[type="submit"] {
+                    background-color: #007bff;
+                    color: white;
+                    border: none;
+                }
+
+                input[type="submit"]:hover {
+                    background-color: #0056b3;
+                }
+            </style>
+
+        </head>
+        <body>
+            <h1>Register</h1>
+            <form action="/register" method="post">
+                <input type="text" name="username" placeholder="Username" required/>
+                <input type="password" name="password" placeholder="Admin Password (optional)" />
+                <input type="submit" value="Register"/>
+            </form>
+        </body>
+    </html>
+}
