@@ -14,26 +14,10 @@ func urlDomain(url string) string {
     return u.Host
 }
 
-// func getSessionID(ctx context.Context) string {
-//     session, ok := ctx.Value(sessionKey).(Session)
-//     if !ok {
-//         return ""
-//     }
-//     return session.ID
-// }
-
 func adminSession(ctx context.Context) bool {
     session, ok := ctx.Value(sessionKey).(Session)
     return ok && session.Admin
 }
-
-// func getSessionName(ctx context.Context) string {
-//     session, ok := ctx.Value(sessionKey).(Session)
-//     if !ok {
-//         return ""
-//     }
-//     return session.UserName
-// }
 
 templ submitPreview(title, url, lyricsURL, thumbnailURL string, duration time.Duration) {
     <a href="/submit" style="text-align: center; display: block; margin-bottom: 1em; text-decoration: none; color: #007bff;">Back to submit</a>
