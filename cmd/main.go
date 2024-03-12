@@ -27,6 +27,7 @@ var (
 	ytdlPath     = flag.String("ytdl", "yt-dlp", "path to youtube-dl")
 	ytdlFilter   = flag.String("ytdl-filter", "bestvideo[ext=mp4][height<=1080]+bestaudio/best", "youtube-dl filter")
 	adminCode    = flag.String("admin-code", "", "code needed for registering as admin")
+	maxUserQueue = flag.Int("max-queue", 1, "maximum number of songs a user can queue")
 )
 
 func writePreviewFrame(filename, message string) error {
@@ -135,7 +136,7 @@ func main() {
 	}
 
 	authHandler := mpvwebkaraoke.NewAuthHandler(sessionStore, *adminCode)
-	queueHandler := mpvwebkaraoke.NewQueueHandler(queue)
+	queueHandler := mpvwebkaraoke.NewQueueHandler(queue, *maxUserQueue)
 
 	queue.OnPush(func(song mpvwebkaraoke.Song) {
 		vidCache.Cache(context.Background(), song.URL)

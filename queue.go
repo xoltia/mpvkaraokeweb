@@ -3,9 +3,12 @@ package mpvwebkaraoke
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"sync"
 	"time"
 )
+
+var ErrLimitExceeded = errors.New("limit exceeded")
 
 type Song struct {
 	ID         int
@@ -107,6 +110,64 @@ func (q *Queue) Push(song *Song) error {
 	}
 
 	return err
+}
+
+// PushLimitUser adds a song to the queue if the user has not exceeded the limit.
+func (q *Queue) PushLimitUser(song *Song, limit int) (err error) {
+	ctx := context.Background()
+	conn, err := q.db.Conn(ctx)
+
+	if err != nil {
+		return
+	}
+
+	defer conn.Close()
+
+	_, err = conn.ExecContext(ctx, "BEGIN IMMEDIATE TRANSACTION;")
+	if err != nil {
+		return
+	}
+
+	defer func() {
+		if err != nil {
+			conn.ExecContext(ctx, "ROLLBACK TRANSACTION;")
+		} else {
+			conn.ExecContext(ctx, "END TRANSACTION;")
+		}
+	}()
+
+	var count int
+	err = conn.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM queue
+		WHERE requester_id = ? AND available
+	`, song.Requester.ID).Scan(&count)
+
+	if err != nil {
+		return
+	}
+
+	if count >= limit {
+		return ErrLimitExceeded
+	}
+
+	err = conn.QueryRowContext(ctx, `
+			INSERT INTO queue (requester_id, title, url, lyrics_url, duration, position)
+			VALUES (?, ?, ?, ?, ?, (SELECT COALESCE(MAX(position), 0) + 1 FROM queue))
+			RETURNING id, created_at
+		`,
+		song.Requester.ID,
+		song.Title,
+		song.URL,
+		song.LyricsURL,
+		song.Duration,
+	).Scan(&song.ID, &song.CreatedAt)
+
+	if err == nil {
+		q.emitPush(*song)
+	}
+
+	return
 }
 
 // Shift returns the next song, removing it from the queue and shifting all other songs up.

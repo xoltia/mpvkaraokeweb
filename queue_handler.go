@@ -3,6 +3,7 @@ package mpvwebkaraoke
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -15,9 +16,10 @@ import (
 )
 
 type QueueHandler struct {
-	queue       *Queue
-	listeners   []chan<- queueEvent
-	listenersMu sync.RWMutex
+	queue            *Queue
+	listeners        []chan<- queueEvent
+	listenersMu      sync.RWMutex
+	maxUserQueueSize int
 }
 
 type eventType string
@@ -34,10 +36,11 @@ type queueEvent struct {
 	SongID int
 }
 
-func NewQueueHandler(queue *Queue) *QueueHandler {
+func NewQueueHandler(queue *Queue, maxUserQueueSize int) *QueueHandler {
 	h := &QueueHandler{
-		queue:     queue,
-		listeners: make([]chan<- queueEvent, 0),
+		queue:            queue,
+		listeners:        make([]chan<- queueEvent, 0),
+		maxUserQueueSize: maxUserQueueSize,
 	}
 
 	queue.OnPush(func(s Song) {
@@ -154,14 +157,27 @@ func (h *QueueHandler) HandlePostSubmission(w http.ResponseWriter, r *http.Reque
 		LyricsURL: sql.NullString{String: lyricsURL, Valid: lyricsURL != ""},
 	}
 
-	err = h.queue.Push(&song)
+	if session.Admin {
+		err = h.queue.Push(&song)
+	} else {
+		err = h.queue.PushLimitUser(&song, h.maxUserQueueSize)
+	}
+
+	if errors.Is(err, ErrLimitExceeded) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Header().Set("HX-Retarget", "#error")
+		w.Header().Set("HX-Reswap", "innerHTML")
+		fmt.Fprint(w, "<span>You must wait for your song to be played before submitting another.</span>")
+		return
+	}
 
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	http.Redirect(w, r, "/", http.StatusSeeOther)
+	w.Header().Set("HX-Redirect", "/")
+	w.WriteHeader(http.StatusSeeOther)
 }
 
 func (h *QueueHandler) HandleSSE(w http.ResponseWriter, r *http.Request) {
