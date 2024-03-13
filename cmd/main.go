@@ -19,6 +19,19 @@ import (
 	"github.com/wader/goutubedl"
 )
 
+// wraps with newlines if text is too long
+func wrapLongText(text string, length int) string {
+	chars := []rune(text)
+
+	if len(chars) >= length {
+		wrapped := string(chars[:length]) + "\n"
+		wrapped += wrapLongText(string(chars[length:]), length)
+		return wrapped
+	}
+
+	return text
+}
+
 var (
 	addr         = flag.String("addr", ":8080", "address to listen on")
 	dbPath       = flag.String("db", "karaoke.sqlite", "path to sqlite database")
@@ -58,7 +71,7 @@ func loopMPV(queue *mpvwebkaraoke.Queue, cache mpvwebkaraoke.OnceCache) {
 
 		log.Println("playing", song.Title)
 
-		msg := fmt.Sprintf("Now playing:\n%s", song.Title)
+		msg := fmt.Sprintf("Now playing:\n%s", wrapLongText(song.Title, 25))
 		msg += "\n\n"
 		msg += fmt.Sprintf("Requested by:\n%s", song.Requester.UserName)
 
@@ -152,6 +165,7 @@ func main() {
 	mux.Handle("GET /submit", authHandler.Wrap(http.HandlerFunc(queueHandler.HandleSubmissionPage)))
 	mux.Handle("GET /sse", authHandler.Wrap(http.HandlerFunc(queueHandler.HandleSSE)))
 	mux.Handle("DELETE /revoke/{id}", authHandler.Wrap(http.HandlerFunc(queueHandler.HandleRevoke)))
+	mux.Handle("GET /current", authHandler.Wrap(http.HandlerFunc(queueHandler.HandleCurrentSong)))
 
 	http.Handle("/", mux)
 

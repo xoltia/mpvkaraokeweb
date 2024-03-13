@@ -99,7 +99,7 @@ func (h *QueueHandler) HandleIndex(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	queueHome(songs).Render(r.Context(), w)
+	queuePage(songs).Render(r.Context(), w)
 }
 
 func (h *QueueHandler) HandleSubmissionPage(w http.ResponseWriter, r *http.Request) {
@@ -132,6 +132,7 @@ func (h *QueueHandler) HandlePostSubmission(w http.ResponseWriter, r *http.Reque
 	songURL := r.FormValue("url")
 	lyricsURL := r.FormValue("lyricsURL")
 	durationString := r.FormValue("duration")
+	thumbnail := r.FormValue("thumbnail")
 
 	if title == "" {
 		http.Error(w, "title required", http.StatusBadRequest)
@@ -155,6 +156,7 @@ func (h *QueueHandler) HandlePostSubmission(w http.ResponseWriter, r *http.Reque
 		URL:       songURL,
 		Duration:  duration,
 		LyricsURL: sql.NullString{String: lyricsURL, Valid: lyricsURL != ""},
+		Thumbnail: thumbnail,
 	}
 
 	if session.Admin {
@@ -228,6 +230,7 @@ func (h *QueueHandler) HandleSSE(w http.ResponseWriter, r *http.Request) {
 				fmt.Fprintf(w, "event: %s\ndata: %s\n\n", AppendQueue, htmlBuilder.String())
 			case RemoveQueue:
 				fmt.Fprintf(w, "event: %s-%d\ndata:\n\n", RemoveQueue, event.SongID)
+				fmt.Fprint(w, "event: dequeue\ndata:\n\n")
 			}
 			w.(http.Flusher).Flush()
 		}
@@ -255,4 +258,21 @@ func (h *QueueHandler) HandleRevoke(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *QueueHandler) HandleCurrentSong(w http.ResponseWriter, r *http.Request) {
+	lastDequeud, err := h.queue.LastDequeued()
+
+	if errors.Is(err, sql.ErrNoRows) {
+		// No song has been dequeued yet.
+		currentlyPlaying(nil, false).Render(r.Context(), w)
+		return
+	}
+
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	currentlyPlaying(&lastDequeud, false).Render(r.Context(), w)
 }

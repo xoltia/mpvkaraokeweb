@@ -1,0 +1,102 @@
+package mpvwebkaraoke
+
+import (
+    "time"
+)
+
+templ submitPreview(title, url, lyricsURL, thumbnailURL string, duration time.Duration) {
+    <a href="/submit" style="text-align: center; display: block; margin-bottom: 1em; text-decoration: none; color: #007bff;">Back to submit</a>
+    <form hx-post="/submit">
+        <div id="error"></div>
+        <img src={thumbnailURL} alt="Thumbnail" width="300" style="margin-bottom: 1em"/>
+        <label for="title">Title</label>
+        <input type="text" name="title" value={title} required/>
+        <label for="url">URL</label>
+        <input type="url" name="url" value={url} required/>
+        <label for="lyricsURL">Lyrics URL</label>
+        <input type="url" name="lyricsURL" value={lyricsURL} placeholder="Lyrics URL (optional)"/>
+        <input type="hidden" name="duration" value={duration.String()}/>
+         <input type="hidden" name="thumbnail" value={thumbnailURL}/>
+        <input type="submit" value="Confirm"/>
+    </form>
+}
+
+templ postPage() {
+    <html>
+        <head>
+            <title>MPV Web Karaoke</title>
+            <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+            <style>
+                body {
+                    font-family: Arial, sans-serif;
+                    max-width: 1000px;
+                    margin: 0 auto;
+                    padding: 1em;
+                }
+
+                h1 {
+                    text-align: center;
+                }
+
+                form {
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                }
+
+                input {
+                    margin: 0.5em;
+                    padding: 0.5em;
+                    width: 100%;
+                    max-width: 300px;
+                }
+
+                input[type="submit"] {
+                    background-color: #007bff;
+                    color: white;
+                    border: none;
+                    cursor: pointer;
+                }
+                
+                input[type="submit"]:hover {
+                    background-color: #0056b3;
+                }
+
+
+                input[type="submit"]:disabled {
+                    background-color: #ccc;
+                    cursor: not-allowed;
+                }
+
+                label {
+                    text-align: left;
+                    width: 100%;
+                    max-width: 300px;
+                }
+
+                #error {
+                    width: 300px;
+                }
+
+                #error > span {
+                    background-color: #dc3545;
+                    color: white;
+                    padding: 0.5em;
+                    margin-bottom: 1em;
+                    display: block;
+                }
+            </style>
+        </head>
+        <body>
+            <h1>Submit</h1>
+            <a href="/" style="text-align: center; display: block; margin-bottom: 1em; text-decoration: none; color: #007bff;">Back to queue</a>
+            <form hx-post="/preview" hx-swap="outerHTML" hx-disabled-elt="input[type=submit]">
+                <input type="url" name="url" placeholder="URL" required/>
+                <input type="url" name="lyricsURL" placeholder="Lyrics URL (optional)"/>
+                <span class="htmx-indicator">Loading preview...</span>
+                <input type="submit" value="Submit"/>
+            </form>
+        </body>
+    </html>
+}
+

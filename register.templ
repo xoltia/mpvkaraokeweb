@@ -1,0 +1,53 @@
+package mpvwebkaraoke
+
+templ registerPage() {
+    <html>
+        <head>
+            <title>MPV Web Karaoke</title>
+            <style>
+                body {
+                    font-family: Arial, sans-serif;
+                    max-width: 1000px;
+                    margin: 0 auto;
+                    padding: 1em;
+                }
+
+                h1 {
+                    text-align: center;
+                }
+
+                form {
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                }
+
+                input {
+                    margin: 0.5em;
+                    padding: 0.5em;
+                    width: 100%;
+                    max-width: 300px;
+                }
+
+                input[type="submit"] {
+                    background-color: #007bff;
+                    color: white;
+                    border: none;
+                }
+
+                input[type="submit"]:hover {
+                    background-color: #0056b3;
+                }
+            </style>
+
+        </head>
+        <body>
+            <h1>Register</h1>
+            <form action="/register" method="post">
+                <input type="text" name="username" placeholder="Username" required/>
+                <input type="password" name="password" placeholder="Admin Password (optional)" />
+                <input type="submit" value="Register"/>
+            </form>
+        </body>
+    </html>
+}

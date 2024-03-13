@@ -1,0 +1,297 @@
+package mpvwebkaraoke
+
+import (
+    "fmt"
+    "net/url"
+)
+
+func urlDomain(urlString string) string {
+    u, err := url.Parse(urlString)
+    if err != nil {
+        return ""
+    }
+    return u.Host
+}
+
+func adminSession(ctx context.Context) bool {
+    session, ok := ctx.Value(sessionKey).(Session)
+    return ok && session.Admin
+}
+
+func matchSession(ctx context.Context, sid string) bool {
+    session, ok := ctx.Value(sessionKey).(Session)
+    return ok && session.ID == sid
+}
+
+// templ songTable_OLD(songs []Song) {
+//     <table class="song-table" id="queue">
+//         <colgroup>
+//             if adminSession(ctx) {
+//                 <col style="width: 15%"/>
+//                 <col style="width: 55%"/>
+//                 <col style="width: 10%"/>
+//                 <col style="width: 10%"/>
+//                 <col style="width: 10%"/>
+//             } else {
+//                 <col style="width: 20%"/>
+//                 <col style="width: 60%"/>
+//                 <col style="width: 10%"/>
+//                 <col style="width: 10%"/>
+//             }
+//         </colgroup>
+//         <tr>
+//             <th>Requester</th>
+//             <th>Song</th>
+//             <th>Lyrics</th>
+//             <th>Length</th>
+//             if adminSession(ctx) {
+//                 <th>Revoke</th>
+//             }
+//         </tr>
+//         for _, song := range songs {
+//             @songRow_OLD(song)
+//         }
+//     </table>
+//     <div sse-swap="append-queue" hx-target="#queue" hx-swap="beforeend"></div>
+// }
+
+// templ songRow_OLD(song Song) {
+//     <tr sse-swap={fmt.Sprintf("remove-queue-%d",  song.ID)} hx-swap="delete">
+//         <td>{song.Requester.UserName}</td>
+//         <td><a href={templ.URL(song.URL)} target="_blank">{song.Title}</a></td>
+//         if song.LyricsURL.Valid {
+//             <td>
+//                 <a href={templ.URL(song.LyricsURL.String)} target="_blank">
+//                     {urlDomain(song.LyricsURL.String)}
+//                 </a>
+//             </td>
+//         } else {
+//             <td></td>
+//         }
+//         <td>{song.Duration.String()}</td>
+//         if adminSession(ctx) {
+//             <td>
+//                 <form
+//                     hx-delete={fmt.Sprintf("/revoke/%d", song.ID)}
+//                     hx-swap="none"
+//                     hx-confirm="Are you sure?"
+//                     class="revoke-form"
+//                 >
+//                     <input type="submit" value="Delete"/>
+//                 </form>
+//             </td>
+//         }
+//     </tr>
+// }
+
+// templ queuePage_OLD(songs []Song) {
+//     <html>
+//         <head>
+//             <title>MPV Web Karaoke</title>
+//             <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+//             <script src="https://unpkg.com/htmx.org/dist/ext/sse.js"></script>
+//             <meta name="viewport" content="width=device-width, initial-scale=1"/>
+//             <meta charset="utf-8"/>
+//             <style>
+//                 html {
+//                     background-color: #f2f2f2;
+//                 }
+
+//                 body {
+//                     font-family: Arial, sans-serif;
+//                     max-width: 1000px;
+//                     margin: 0 auto;
+//                     padding: 1em;
+//                 }
+
+//                 .queue-head {
+//                     display: flex;
+//                     justify-content: space-between;
+//                     align-items: center;
+//                 }
+
+//                 .link-button {
+//                     padding: 0.5em 1em;
+//                     background-color: #007bff;
+//                     color: white;
+//                     text-decoration: none;
+//                     height: fit-content;
+//                 }
+
+//                 .link-button:hover {
+//                     background-color: #0056b3;
+//                 }
+
+//                 .song-table {
+//                     width: 100%;
+//                     border-collapse: collapse;
+//                     text-align: center;
+//                 }
+
+//                 .song-table th, .song-table td {
+//                     border: 1px solid #ddd;
+//                     padding: 0.5em;
+//                     overflow: hidden;
+//                     text-overflow: ellipsis;
+//                     white-space: nowrap;
+//                 }
+                
+//                 .song-table tr:first-child th {
+//                     background-color: #e8e8e8;
+//                 }
+                
+  
+//                 .revoke-form {
+//                     display: flex;
+//                     justify-content: center;
+//                     margin: 0;
+//                 }
+
+//                 .revoke-form input[type="submit"] {
+//                     background-color: #dc3545;
+//                     color: white;
+//                     border: none;
+//                     cursor: pointer;
+//                 }
+//             </style>
+//         </head>
+//         <body>
+//             <div class="queue-head">
+//                 <h1>Queue</h1>
+//                 <a class="link-button" href="/submit">New</a>
+//             </div>
+//             <div hx-ext="sse" sse-connect="/sse" sse-swap="rerender-queue">
+//                 @songTable_OLD(songs)
+//             </div>
+//         </body>
+//     </html>
+// }
+
+templ queuePage(songs []Song) {
+    <html>
+        <head>
+            <title>MPV Web Karaoke</title>
+            <meta name="viewport" content="width=device-width, initial-scale=1"/>
+            <meta charset="utf-8"/>
+            <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+            <script src="https://unpkg.com/htmx.org/dist/ext/sse.js"></script>
+            <!-- TODO: use tailwind CLI -->
+            <script src="https://cdn.tailwindcss.com"></script>
+        </head>
+
+        <body class="bg-gray-100">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+                <div class="flex justify-between items-center">
+                    <h1 class="text-3xl font-bold">Queue</h1>
+                    <a href="/submit" class="text-white font-bold py-2 px-4 rounded bg-gray-800 hover:bg-gray-700">
+                        New
+                    </a>
+                </div>
+                <div class="mt-4 flex flex-col"   
+                    hx-ext="sse"
+                    sse-connect="/sse">
+                    @currentlyPlaying(nil, true)
+                   //@fakeCurrentSong()
+                    @songTable(songs)
+                    <div sse-swap="append-queue" hx-target="#queue" hx-swap="beforeend"></div>
+                </div>
+            </div>
+        </body>
+    </html>
+}
+
+templ songTable(songs []Song) {
+    <div class="overflow-x-auto bg-white rounded-lg shadow-md mt-4 py-4 px-6"
+        sse-swap="rerender-queue"
+        hx-swap="outerHTML"
+        id="queue">
+        <table class="min-w-full lg:w-full table-fixed">
+            <thead>
+                <tr>
+                    <th class="px-2 text-left lg:w-1/5">Requester</th>
+                    <th class="px-2 text-left lg:w-1/2">Song</th>
+                    <th class="px-2 text-left">Lyrics</th>
+                    <th class="px-2 text-left">Length</th>
+                    <th class="px-2 text-left">Revoke</th>
+                </tr>
+            </thead>
+            <tbody>
+                for _, song := range songs {
+                    @songRow(song)
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+templ songRow(song Song) {
+    <tr sse-swap={fmt.Sprintf("remove-queue-%d",  song.ID)} hx-swap="delete"
+        class="border-b border-gray-200">
+        <td class="px-2 py-4 whitespace-nowrap text-ellipsis overflow-hidden w-1/5">
+            {song.Requester.UserName}
+        </td>
+        <td class="px-2 py-4 whitespace-nowrap text-ellipsis overflow-hidden w-2/5">
+            <a href={templ.URL(song.URL)} target="_blank">{song.Title}</a>
+        </td>
+        if song.LyricsURL.Valid {
+            <td class="px-2 py-4 whitespace-nowrap text-ellipsis overflow-hidden w-1/5">
+                <a href={templ.URL(song.LyricsURL.String)} target="_blank">
+                    {urlDomain(song.LyricsURL.String)}
+                </a>
+            </td>
+        } else {
+            <td class="px-2 py-4 whitespace-nowrap text-ellipsis overflow-hidden w-1/5"></td>
+        }
+        <td class="px-2 py-4 whitespace-nowrap text-ellipsis overflow-hidden w-1/5">
+            {song.Duration.String()}
+        </td>
+        if adminSession(ctx) {
+            <td class="px-2 py-4 whitespace-nowrap text-right text-ellipsis overflow-hidden w-1/5">
+                <form
+                    hx-delete={fmt.Sprintf("/revoke/%d", song.ID)}
+                    hx-swap="none"
+                    hx-confirm="Are you sure?"
+                    class="m-0"
+                >
+                    <input type="submit" value="Delete" class="bg-red-500 text-white px-4 py-2 rounded"/>
+                </form>
+            </td>
+        } else {
+            <td class="px-2 py-4 whitespace-nowrap text-right text-ellipsis overflow-hidden w-1/5"></td>
+        }
+    </tr>
+}
+
+templ currentlyPlaying(song *Song, firstLoad bool) {
+    if firstLoad {
+        <div hx-get="/current" hx-trigger="load" hx-swap="outerHTML"></div>
+    } else if song != nil {
+        <div hx-trigger="sse:dequeue" hx-get="/current"  hx-swap="outerHTML" class="bg-white p-4 rounded-lg shadow-md mt-4">
+            <h2 class="text-xl font-bold mb-2">Currently Playing</h2>
+            <!-- Show thumbnail, title, and requester -->
+            <div class="flex items-center mt-2">
+                <img src={song.Thumbnail} class="w-16 h-16 rounded-lg" alt={song.Title}/>
+                <div class="ml-4">
+                    <h3 class="text-lg font-bold">{song.Title}</h3>
+                    <p class="text-gray-600">Requested by {song.Requester.UserName}</p>
+                    <!-- Show lyrics link if available -->
+                    if song.LyricsURL.Valid {
+                        <a href={templ.URL(song.LyricsURL.String)} class="text-blue-500" target="_blank">
+                        Lyrics from {urlDomain(song.LyricsURL.String)}
+                        </a>
+                    }
+                </div>
+                <!-- Show duration and dequeue time -->
+                <div class="ml-auto md:text-right">
+                    <p class="text-gray-600">{song.Duration.String()}</p>
+                    <p class="text-gray-600">{song.DequeuedAt.Time.Format("15:04:05")}</p>
+                </div>
+            </div>
+        </div>
+    } else {
+        <div class="bg-white p-4 rounded-lg shadow-md mt-4">
+            <h2 class="text-xl font-bold">Currently Playing</h2>
+            <p class="text-gray-600">No song currently playing</p>
+        </div>
+    }
+}

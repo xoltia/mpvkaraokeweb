@@ -14,6 +14,7 @@ type Song struct {
 	ID         int
 	Requester  Session
 	Title      string
+	Thumbnail  string
 	URL        string
 	LyricsURL  sql.NullString
 	Duration   time.Duration
@@ -83,6 +84,7 @@ func (q *Queue) Init() error {
 			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 			revoked_at TIMESTAMP,
 			dequeued_at TIMESTAMP,
+			thumbnail TEXT NOT NULL DEFAULT '',
 			available GENERATED ALWAYS AS (revoked_at IS NULL AND dequeued_at IS NULL) VIRTUAL,
 			FOREIGN KEY (requester_id) REFERENCES sessions(id)
 		)
@@ -90,12 +92,51 @@ func (q *Queue) Init() error {
 	return err
 }
 
+// GetByID retrieves a song by its ID.
+func (q *Queue) GetByID(id int) (s Song, err error) {
+	err = q.db.QueryRow(`
+		SELECT
+			s.id,
+			s.requester_id,
+			s.title,
+			s.url,
+			s.lyrics_url,
+			s.duration,
+			s.position,
+			s.created_at,
+			s.revoked_at,
+			s.dequeued_at,
+			u.user_name,
+			u.admin,
+			s.thumbnail
+		FROM queue s
+		JOIN sessions u ON s.requester_id = u.id
+		WHERE s.id = ?
+	`, id).Scan(
+		&s.ID,
+		&s.Requester.ID,
+		&s.Title,
+		&s.URL,
+		&s.LyricsURL,
+		&s.Duration,
+		&s.Position,
+		&s.CreatedAt,
+		&s.RevokedAt,
+		&s.DequeuedAt,
+		&s.Requester.UserName,
+		&s.Requester.Admin,
+		&s.Thumbnail,
+	)
+
+	return
+}
+
 // Push adds a song to the queue.
 // Sets the song's ID and CreatedAt fields.
 func (q *Queue) Push(song *Song) error {
 	err := q.db.QueryRow(`
-			INSERT INTO queue (requester_id, title, url, lyrics_url, duration, position)
-			VALUES (?, ?, ?, ?, ?, (SELECT COALESCE(MAX(position), 0) + 1 FROM queue))
+			INSERT INTO queue (requester_id, title, url, lyrics_url, duration, position, thumbnail)
+			VALUES (?, ?, ?, ?, ?, (SELECT COALESCE(MAX(position), 0) + 1 FROM queue), ?)
 			RETURNING id, created_at
 		`,
 		song.Requester.ID,
@@ -103,6 +144,7 @@ func (q *Queue) Push(song *Song) error {
 		song.URL,
 		song.LyricsURL,
 		song.Duration,
+		song.Thumbnail,
 	).Scan(&song.ID, &song.CreatedAt)
 
 	if err == nil {
@@ -152,8 +194,8 @@ func (q *Queue) PushLimitUser(song *Song, limit int) (err error) {
 	}
 
 	err = conn.QueryRowContext(ctx, `
-			INSERT INTO queue (requester_id, title, url, lyrics_url, duration, position)
-			VALUES (?, ?, ?, ?, ?, (SELECT COALESCE(MAX(position), 0) + 1 FROM queue))
+			INSERT INTO queue (requester_id, title, url, lyrics_url, duration, position, thumbnail)
+			VALUES (?, ?, ?, ?, ?, (SELECT COALESCE(MAX(position), 0) + 1 FROM queue), ?)
 			RETURNING id, created_at
 		`,
 		song.Requester.ID,
@@ -161,6 +203,7 @@ func (q *Queue) PushLimitUser(song *Song, limit int) (err error) {
 		song.URL,
 		song.LyricsURL,
 		song.Duration,
+		song.Thumbnail,
 	).Scan(&song.ID, &song.CreatedAt)
 
 	if err == nil {
@@ -207,7 +250,8 @@ func (q *Queue) Shift() (s Song, err error) {
 			s.revoked_at,
 			s.dequeued_at,
 			u.user_name,
-			u.admin
+			u.admin,
+			s.thumbnail
 		FROM queue s
 		JOIN sessions u ON s.requester_id = u.id
 		WHERE s.position = 1
@@ -224,6 +268,7 @@ func (q *Queue) Shift() (s Song, err error) {
 		&s.DequeuedAt,
 		&s.Requester.UserName,
 		&s.Requester.Admin,
+		&s.Thumbnail,
 	)
 
 	if err != nil {
@@ -280,12 +325,14 @@ func (q *Queue) List() (songs []Song, err error) {
 			s.revoked_at,
 			s.dequeued_at,
 			u.user_name,
-			u.admin
+			u.admin,
+			s.thumbnail
 		FROM queue s
 		JOIN sessions u ON s.requester_id = u.id
 		WHERE s.available
 		ORDER BY s.position
 	`)
+
 	if err != nil {
 		return
 	}
@@ -307,6 +354,7 @@ func (q *Queue) List() (songs []Song, err error) {
 			&s.DequeuedAt,
 			&s.Requester.UserName,
 			&s.Requester.Admin,
+			&s.Thumbnail,
 		)
 		if err != nil {
 			return
@@ -353,7 +401,8 @@ func (q *Queue) ListLocked() (songs []Song, unlock func() error, err error) {
 			s.revoked_at,
 			s.dequeued_at,
 			u.user_name,
-			u.admin
+			u.admin,
+			s.thumbnail
 		FROM queue s
 		JOIN sessions u ON s.requester_id = u.id
 		WHERE s.available
@@ -378,6 +427,7 @@ func (q *Queue) ListLocked() (songs []Song, unlock func() error, err error) {
 			&s.DequeuedAt,
 			&s.Requester.UserName,
 			&s.Requester.Admin,
+			&s.Thumbnail,
 		)
 		if err != nil {
 			return
@@ -430,4 +480,44 @@ func (q *Queue) Move(id, position int) error {
 	`, position, id)
 
 	return err
+}
+
+func (q *Queue) LastDequeued() (s Song, err error) {
+	err = q.db.QueryRow(`
+		SELECT
+			s.id,
+			s.requester_id,
+			s.title,
+			s.url,
+			s.lyrics_url,
+			s.duration,
+			s.position,
+			s.created_at,
+			s.revoked_at,
+			s.dequeued_at,
+			u.user_name,
+			u.admin,
+			s.thumbnail
+		FROM queue s
+		JOIN sessions u ON s.requester_id = u.id
+		WHERE s.dequeued_at IS NOT NULL
+		ORDER BY s.dequeued_at DESC
+		LIMIT 1
+	`).Scan(
+		&s.ID,
+		&s.Requester.ID,
+		&s.Title,
+		&s.URL,
+		&s.LyricsURL,
+		&s.Duration,
+		&s.Position,
+		&s.CreatedAt,
+		&s.RevokedAt,
+		&s.DequeuedAt,
+		&s.Requester.UserName,
+		&s.Requester.Admin,
+		&s.Thumbnail,
+	)
+
+	return
 }
