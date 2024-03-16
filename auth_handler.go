@@ -22,7 +22,7 @@ func NewAuthHandler(sessions *SessionStore, adminCode string) *AuthHandler {
 	return &AuthHandler{sessions: sessions, adminCode: adminCode}
 }
 
-func (h *AuthHandler) Wrap(next http.Handler) http.Handler {
+func (h *AuthHandler) Wrap(next http.HandlerFunc) http.HandlerFunc {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		cookie, err := r.Cookie("session")
 		if err != nil {

@@ -19,6 +19,17 @@ import (
 	"github.com/wader/goutubedl"
 )
 
+var (
+	addr         = flag.String("addr", ":8080", "address to listen on")
+	dbPath       = flag.String("db", "karaoke.sqlite", "path to sqlite database")
+	cachePath    = flag.String("cache", "vidcache", "path to video cache")
+	disableCache = flag.Bool("disable-cache", false, "disable video cache")
+	ytdlPath     = flag.String("ytdl", "yt-dlp", "path to youtube-dl")
+	ytdlFilter   = flag.String("ytdl-filter", "bestvideo[ext=mp4][height<=1080]+bestaudio/best", "youtube-dl filter")
+	adminCode    = flag.String("admin-code", "", "code needed for registering as admin")
+	maxUserQueue = flag.Int("max-queue", 1, "maximum number of songs a user can queue")
+)
+
 // wraps with newlines if text is too long
 func wrapLongText(text string, length int) string {
 	chars := []rune(text)
@@ -31,17 +42,6 @@ func wrapLongText(text string, length int) string {
 
 	return text
 }
-
-var (
-	addr         = flag.String("addr", ":8080", "address to listen on")
-	dbPath       = flag.String("db", "karaoke.sqlite", "path to sqlite database")
-	cachePath    = flag.String("cache", "vidcache", "path to video cache")
-	disableCache = flag.Bool("disable-cache", false, "disable video cache")
-	ytdlPath     = flag.String("ytdl", "yt-dlp", "path to youtube-dl")
-	ytdlFilter   = flag.String("ytdl-filter", "bestvideo[ext=mp4][height<=1080]+bestaudio/best", "youtube-dl filter")
-	adminCode    = flag.String("admin-code", "", "code needed for registering as admin")
-	maxUserQueue = flag.Int("max-queue", 1, "maximum number of songs a user can queue")
-)
 
 func writePreviewFrame(filename, message string) error {
 	cmd := exec.Command(
@@ -149,7 +149,7 @@ func main() {
 	}
 
 	authHandler := mpvwebkaraoke.NewAuthHandler(sessionStore, *adminCode)
-	queueHandler := mpvwebkaraoke.NewQueueHandler(queue, *maxUserQueue)
+	queueHandler := mpvwebkaraoke.NewQueueHandler(queue, sessionStore, *maxUserQueue)
 
 	queue.OnPush(func(song mpvwebkaraoke.Song) {
 		vidCache.Cache(context.Background(), song.URL)
@@ -157,15 +157,20 @@ func main() {
 
 	mux := http.NewServeMux()
 
-	mux.Handle("GET /register", http.HandlerFunc(authHandler.HandleIndex))
-	mux.Handle("POST /register", http.HandlerFunc(authHandler.HandleRegister))
-	mux.Handle("GET /", authHandler.Wrap(http.HandlerFunc(queueHandler.HandleIndex)))
-	mux.Handle("POST /preview", authHandler.Wrap(http.HandlerFunc(queueHandler.HandlePostPreview)))
-	mux.Handle("POST /submit", authHandler.Wrap(http.HandlerFunc(queueHandler.HandlePostSubmission)))
-	mux.Handle("GET /submit", authHandler.Wrap(http.HandlerFunc(queueHandler.HandleSubmissionPage)))
-	mux.Handle("GET /sse", authHandler.Wrap(http.HandlerFunc(queueHandler.HandleSSE)))
-	mux.Handle("DELETE /revoke/{id}", authHandler.Wrap(http.HandlerFunc(queueHandler.HandleRevoke)))
-	mux.Handle("GET /current", authHandler.Wrap(http.HandlerFunc(queueHandler.HandleCurrentSong)))
+	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/queue", http.StatusFound)
+	})
+
+	mux.HandleFunc("GET /register", authHandler.HandleIndex)
+	mux.HandleFunc("POST /register", authHandler.HandleRegister)
+	mux.HandleFunc("GET /queue", authHandler.Wrap(queueHandler.HandleIndex))
+	mux.HandleFunc("GET /queue/request", authHandler.Wrap(queueHandler.HandleSubmissionPage))
+	mux.HandleFunc("POST /queue/preview", authHandler.Wrap(queueHandler.HandlePostPreview))
+	mux.HandleFunc("POST /queue/request", authHandler.Wrap(queueHandler.HandlePostSubmission))
+	mux.HandleFunc("DELETE /queue/revoke/{id}", authHandler.Wrap(queueHandler.HandleRevoke))
+	mux.HandleFunc("GET /queue/current", authHandler.Wrap(queueHandler.HandleCurrentSong))
+	mux.HandleFunc("GET /queue/members", authHandler.Wrap(queueHandler.HandleMemberList))
+	mux.HandleFunc("GET /sse", authHandler.Wrap(queueHandler.HandleSSE))
 
 	http.Handle("/", mux)
 

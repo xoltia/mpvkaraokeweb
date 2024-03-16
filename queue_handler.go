@@ -17,6 +17,7 @@ import (
 
 type QueueHandler struct {
 	queue            *Queue
+	sessions         *SessionStore
 	listeners        []chan<- queueEvent
 	listenersMu      sync.RWMutex
 	maxUserQueueSize int
@@ -25,20 +26,23 @@ type QueueHandler struct {
 type eventType string
 
 const (
-	RerenderQueue eventType = "rerender-queue"
-	AppendQueue   eventType = "append-queue"
-	RemoveQueue   eventType = "remove-queue"
+	RerenderQueue eventType = "queue:set"
+	AppendQueue   eventType = "queue:push"
+	RemoveQueue   eventType = "queue:remove"
+	SessionJoin   eventType = "session:join"
 )
 
 type queueEvent struct {
-	Event  eventType
-	Song   Song
-	SongID int
+	Event   eventType
+	Song    Song
+	SongID  int
+	Session Session
 }
 
-func NewQueueHandler(queue *Queue, maxUserQueueSize int) *QueueHandler {
+func NewQueueHandler(queue *Queue, sessions *SessionStore, maxUserQueueSize int) *QueueHandler {
 	h := &QueueHandler{
 		queue:            queue,
+		sessions:         sessions,
 		listeners:        make([]chan<- queueEvent, 0),
 		maxUserQueueSize: maxUserQueueSize,
 	}
@@ -49,6 +53,10 @@ func NewQueueHandler(queue *Queue, maxUserQueueSize int) *QueueHandler {
 
 	queue.OnRemove(func(id int) {
 		h.sendEvent(queueEvent{Event: RemoveQueue, SongID: id})
+	})
+
+	sessions.OnCreate(func(s Session) {
+		h.sendEvent(queueEvent{Event: SessionJoin, Session: s})
 	})
 
 	return h
@@ -87,7 +95,7 @@ func (h *QueueHandler) renderQueueLocked(ctx context.Context) (html string, unlo
 	}
 
 	table := &strings.Builder{}
-	songTable(songs).Render(ctx, table)
+	queueTable(songs).Render(ctx, table)
 	html = table.String()
 	return
 }
@@ -132,7 +140,7 @@ func (h *QueueHandler) HandlePostSubmission(w http.ResponseWriter, r *http.Reque
 	songURL := r.FormValue("url")
 	lyricsURL := r.FormValue("lyricsURL")
 	durationString := r.FormValue("duration")
-	thumbnail := r.FormValue("thumbnail")
+	thumbnail := r.FormValue("thumbnailURL")
 
 	if title == "" {
 		http.Error(w, "title required", http.StatusBadRequest)
@@ -166,10 +174,7 @@ func (h *QueueHandler) HandlePostSubmission(w http.ResponseWriter, r *http.Reque
 	}
 
 	if errors.Is(err, ErrLimitExceeded) {
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.Header().Set("HX-Retarget", "#error")
-		w.Header().Set("HX-Reswap", "innerHTML")
-		fmt.Fprint(w, "<span>You must wait for your song to be played before submitting another.</span>")
+		fmt.Fprint(w, "<span class=\"p-2\">You must wait for your song to be played before submitting another.</span>")
 		return
 	}
 
@@ -228,9 +233,10 @@ func (h *QueueHandler) HandleSSE(w http.ResponseWriter, r *http.Request) {
 				htmlBuilder.Reset()
 				songRow(event.Song).Render(r.Context(), htmlBuilder)
 				fmt.Fprintf(w, "event: %s\ndata: %s\n\n", AppendQueue, htmlBuilder.String())
+				fmt.Fprint(w, "event: queue:change\ndata:\n\n")
 			case RemoveQueue:
-				fmt.Fprintf(w, "event: %s-%d\ndata:\n\n", RemoveQueue, event.SongID)
-				fmt.Fprint(w, "event: dequeue\ndata:\n\n")
+				fmt.Fprintf(w, "event: %s:%d\ndata:\n\n", RemoveQueue, event.SongID)
+				fmt.Fprint(w, "event: queue:change\ndata:\n\n")
 			}
 			w.(http.Flusher).Flush()
 		}
@@ -275,4 +281,45 @@ func (h *QueueHandler) HandleCurrentSong(w http.ResponseWriter, r *http.Request)
 	}
 
 	currentlyPlaying(&lastDequeud, false).Render(r.Context(), w)
+}
+
+func (h *QueueHandler) HandleMemberList(w http.ResponseWriter, r *http.Request) {
+	sessions, err := h.sessions.GetAll()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	queue, err := h.queue.List()
+
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	members := make([]Member, len(sessions))
+
+	for i, s := range sessions {
+		if s.Admin {
+			members[i] = Member{
+				Session:   s,
+				QueueOpen: true,
+			}
+			continue
+		}
+
+		count := 0
+		for _, q := range queue {
+			if q.Requester.ID == s.ID {
+				count++
+			}
+		}
+
+		members[i] = Member{
+			Session:   s,
+			QueueOpen: count < h.maxUserQueueSize,
+		}
+	}
+
+	membersList(members).Render(r.Context(), w)
 }

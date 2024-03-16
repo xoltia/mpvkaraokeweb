@@ -13,11 +13,12 @@ type Session struct {
 }
 
 type SessionStore struct {
-	db *sql.DB
+	db             *sql.DB
+	createListener func(Session)
 }
 
 func NewSessionStore(db *sql.DB) *SessionStore {
-	return &SessionStore{db}
+	return &SessionStore{db, nil}
 }
 
 func (s *SessionStore) Init() error {
@@ -31,6 +32,10 @@ func (s *SessionStore) Init() error {
 	return err
 }
 
+func (s *SessionStore) OnCreate(f func(Session)) {
+	s.createListener = f
+}
+
 func (s *SessionStore) Create(user string, admin bool) (id string, err error) {
 	id, err = newSessionID()
 	if err != nil {
@@ -41,6 +46,11 @@ func (s *SessionStore) Create(user string, admin bool) (id string, err error) {
 		INSERT INTO sessions (id, user_name, admin)
 		VALUES (?, ?, ?)
 	`, id, user, admin)
+
+	if err == nil && s.createListener != nil {
+		s.createListener(Session{ID: id, UserName: user, Admin: admin})
+	}
+
 	return
 }
 
@@ -50,6 +60,27 @@ func (s *SessionStore) Get(id string) (session Session, err error) {
 		FROM sessions
 		WHERE id = ?
 	`, id).Scan(&session.ID, &session.UserName, &session.Admin)
+	return
+}
+
+func (s *SessionStore) GetAll() (sessions []Session, err error) {
+	rows, err := s.db.Query(`
+		SELECT id, user_name, admin
+		FROM sessions
+	`)
+	if err != nil {
+		return
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var session Session
+		err = rows.Scan(&session.ID, &session.UserName, &session.Admin)
+		if err != nil {
+			return
+		}
+		sessions = append(sessions, session)
+	}
 	return
 }
 

@@ -5,98 +5,57 @@ import (
 )
 
 templ submitPreview(title, url, lyricsURL, thumbnailURL string, duration time.Duration) {
-    <a href="/submit" style="text-align: center; display: block; margin-bottom: 1em; text-decoration: none; color: #007bff;">Back to submit</a>
-    <form hx-post="/submit">
-        <div id="error"></div>
-        <img src={thumbnailURL} alt="Thumbnail" width="300" style="margin-bottom: 1em"/>
-        <label for="title">Title</label>
-        <input type="text" name="title" value={title} required/>
-        <label for="url">URL</label>
-        <input type="url" name="url" value={url} required/>
-        <label for="lyricsURL">Lyrics URL</label>
-        <input type="url" name="lyricsURL" value={lyricsURL} placeholder="Lyrics URL (optional)"/>
-        <input type="hidden" name="duration" value={duration.String()}/>
-         <input type="hidden" name="thumbnail" value={thumbnailURL}/>
-        <input type="submit" value="Confirm"/>
+    <form hx-post="/queue/request" hx-target="#error" hx-swap="innerHTML">
+        <a href="/queue/request" class="text-sky-300 block">&#8592; Go back to the request form</a>
+        <a href="/queue" class="text-sky-300 block mb-2">&#8592; Go back to the queue</a>
+        <div id="error" class="bg-red-500 text-white rounded-md mb-4"></div>
+        <img src={thumbnailURL} alt={title} class="max-w-full mb-4 rounded-md" />
+        <label class="block mb-2" for="url">Title</label>
+        <input type="text" name="title" class="w-full rounded-md p-2 bg-neutral-700 text-neutral-100"
+            readonly value={title} />
+        <label class="block mb-2" for="url">URL</label>
+        <input type="url" name="url" class="w-full rounded-md p-2 bg-neutral-700 text-neutral-100"
+            readonly value={url} />
+        <label class="block mb-2" for="url">Lyrics URL</label>
+        <input type="url" name="lyricsURL" class="w-full rounded-md p-2 bg-neutral-700 text-neutral-100"
+            readonly value={lyricsURL} placeholder="None" />
+        <input type="url" name="thumbnailURL" readonly hidden value={thumbnailURL} />
+        <input type="string" name="duration" readonly hidden value={duration.String()} />
+        <button type="submit" class="bg-pink-300 text-white px-4 py-2 rounded-md mt-4">Submit</button>
     </form>
 }
 
 templ postPage() {
-    <html>
-        <head>
-            <title>MPV Web Karaoke</title>
-            <script src="https://unpkg.com/htmx.org@1.9.10"></script>
-            <style>
-                body {
-                    font-family: Arial, sans-serif;
-                    max-width: 1000px;
-                    margin: 0 auto;
-                    padding: 1em;
-                }
-
-                h1 {
-                    text-align: center;
-                }
-
-                form {
-                    display: flex;
-                    flex-direction: column;
-                    align-items: center;
-                }
-
-                input {
-                    margin: 0.5em;
-                    padding: 0.5em;
-                    width: 100%;
-                    max-width: 300px;
-                }
-
-                input[type="submit"] {
-                    background-color: #007bff;
-                    color: white;
-                    border: none;
-                    cursor: pointer;
-                }
-                
-                input[type="submit"]:hover {
-                    background-color: #0056b3;
-                }
-
-
-                input[type="submit"]:disabled {
-                    background-color: #ccc;
-                    cursor: not-allowed;
-                }
-
-                label {
-                    text-align: left;
-                    width: 100%;
-                    max-width: 300px;
-                }
-
-                #error {
-                    width: 300px;
-                }
-
-                #error > span {
-                    background-color: #dc3545;
-                    color: white;
-                    padding: 0.5em;
-                    margin-bottom: 1em;
-                    display: block;
-                }
-            </style>
-        </head>
-        <body>
-            <h1>Submit</h1>
-            <a href="/" style="text-align: center; display: block; margin-bottom: 1em; text-decoration: none; color: #007bff;">Back to queue</a>
-            <form hx-post="/preview" hx-swap="outerHTML" hx-disabled-elt="input[type=submit]">
-                <input type="url" name="url" placeholder="URL" required/>
-                <input type="url" name="lyricsURL" placeholder="Lyrics URL (optional)"/>
-                <span class="htmx-indicator">Loading preview...</span>
-                <input type="submit" value="Submit"/>
-            </form>
-        </body>
-    </html>
+        <html>
+            <head>
+                <title>Request a Song</title>
+                <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+                <meta charset="utf-8" />
+                <script src="https://unpkg.com/htmx.org@1.9.10"
+                    integrity="sha384-D1Kt99CQMDuVetoL1lrYwg5t+9QdHe7NLX/SoJYkXDFfX37iInKRy5xLSi8nO7UC"
+                    crossorigin="anonymous"></script>
+                <script src="https://cdn.tailwindcss.com"></script>
+            </head>
+            <body class="bg-neutral-900 text-neutral-100">
+                <div class="container mx-auto py-8 max-w-xl px-2 md:px-0">
+                    <div class="bg-neutral-800 p-4 rounded-md">
+                        <h1 class="text-2xl mb-3">Request a Song</h1>
+                        <form hx-post="/queue/preview" hx-swap="outerHTML"
+                            hx-disabled-elt="button[type=submit]"
+                        > 
+                            <a href="/queue" class="text-sky-300 block mb-2">&#8592; Go back to the queue</a>
+                            <label class="block mb-2" for="url">URL</label>
+                            <input type="url" name="url" id="url" class="w-full rounded-md p-2 bg-neutral-700 text-neutral-100" required />
+                            <label class="block mb-2" for="url">Lyrics URL (optional)</label>
+                            <input type="url" name="lyricsURL" id="lyrics" class="w-full rounded-md p-2 bg-neutral-700 text-neutral-100" />
+                            <div class="htmx-indicator">
+                                Loading...
+                            </div>
+                            <button type="submit" class="bg-pink-300 text-white px-4 py-2 rounded-md mt-4">Request</button>
+                        </form>
+                    </div>
+                </div>
+            </body>
+        </html>
 }
 
