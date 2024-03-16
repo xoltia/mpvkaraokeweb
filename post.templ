@@ -2,11 +2,23 @@ package mpvwebkaraoke
 
 import (
     "time"
+	"net/url"
 )
+
+func returnURL(songURL, lyricsURL string) templ.SafeURL {
+    query := url.Values{}
+    query.Set("url", songURL)
+    if lyricsURL != "" {
+        query.Set("lyricsURL", lyricsURL)
+    }
+    return templ.SafeURL("/queue/request?" + query.Encode())
+}
 
 templ submitPreview(title, url, lyricsURL, thumbnailURL string, duration time.Duration) {
     <form hx-post="/queue/request" hx-target="#error" hx-swap="innerHTML">
-        <a href="/queue/request" class="text-sky-300 block">&#8592; Go back to the request form</a>
+        <a class="text-sky-300 block"
+            href={returnURL(url, lyricsURL)}
+        >&#8592; Go back to the request form</a>
         <a href="/queue" class="text-sky-300 block mb-2">&#8592; Go back to the queue</a>
         <div id="error" class="bg-red-500 text-white rounded-md mb-4"></div>
         <img src={thumbnailURL} alt={title} class="max-w-full mb-4 rounded-md" />
@@ -25,7 +37,7 @@ templ submitPreview(title, url, lyricsURL, thumbnailURL string, duration time.Du
     </form>
 }
 
-templ postPage() {
+templ postPage(songURL, lyricsURL string) {
         <html>
             <head>
                 <title>Request a Song</title>
@@ -45,9 +57,9 @@ templ postPage() {
                         > 
                             <a href="/queue" class="text-sky-300 block mb-2">&#8592; Go back to the queue</a>
                             <label class="block mb-2" for="url">URL</label>
-                            <input type="url" name="url" id="url" class="w-full rounded-md p-2 bg-neutral-700 text-neutral-100" required />
-                            <label class="block mb-2" for="url">Lyrics URL (optional)</label>
-                            <input type="url" name="lyricsURL" id="lyrics" class="w-full rounded-md p-2 bg-neutral-700 text-neutral-100" />
+                            <input type="url" name="url" value={songURL} class="w-full rounded-md p-2 bg-neutral-700 text-neutral-100" required />
+                            <label class="block mb-2" for="url">Lyrics URL</label>
+                            <input type="url" name="lyricsURL" value={lyricsURL} class="w-full rounded-md p-2 bg-neutral-700 text-neutral-100" />
                             <div class="htmx-indicator">
                                 Loading...
                             </div>

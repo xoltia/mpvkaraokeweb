@@ -111,7 +111,11 @@ func (h *QueueHandler) HandleIndex(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *QueueHandler) HandleSubmissionPage(w http.ResponseWriter, r *http.Request) {
-	postPage().Render(r.Context(), w)
+	q := r.URL.Query()
+	songURL := q.Get("url")
+	lyricsURL := q.Get("lyricsURL")
+
+	postPage(songURL, lyricsURL).Render(r.Context(), w)
 }
 
 func (h *QueueHandler) HandlePostPreview(w http.ResponseWriter, r *http.Request) {
