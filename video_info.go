@@ -80,10 +80,6 @@ var thumbnailNames = [...]string{
 }
 
 func selectThumbnail(vid *youtube.Video) (thumbnail string) {
-	if len(vid.Thumbnails) == 0 {
-		return ""
-	}
-
 	for _, name := range thumbnailNames {
 		for _, ext := range []string{"webp", "jpg"} {
 			for _, live := range []string{"", "_live"} {
