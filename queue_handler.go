@@ -11,8 +11,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/wader/goutubedl"
 )
 
 type QueueHandler struct {
@@ -122,7 +120,7 @@ func (h *QueueHandler) HandlePostPreview(w http.ResponseWriter, r *http.Request)
 	songURL := r.FormValue("url")
 	lyricsURL := r.FormValue("lyricsURL")
 
-	result, err := goutubedl.New(r.Context(), songURL, goutubedl.Options{})
+	video, err := getVideoInfo(r.Context(), songURL)
 
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -130,11 +128,11 @@ func (h *QueueHandler) HandlePostPreview(w http.ResponseWriter, r *http.Request)
 	}
 
 	submitPreview(
-		result.Info.Title,
+		video.title,
 		songURL,
 		lyricsURL,
-		result.Info.Thumbnail,
-		time.Duration(result.Info.Duration)*time.Second,
+		video.thumbnail,
+		time.Duration(video.duration)*time.Second,
 	).Render(r.Context(), w)
 }
 
