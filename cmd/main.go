@@ -16,6 +16,7 @@ import (
 
 	"github.com/NYTimes/gziphandler"
 	"github.com/UTD-JLA/mpvwebkaraoke"
+	"github.com/UTD-JLA/mpvwebkaraoke/style"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/wader/goutubedl"
 )
@@ -164,6 +165,9 @@ func main() {
 	})
 
 	if *noCompression {
+		mux.HandleFunc("GET /style.css", func(w http.ResponseWriter, r *http.Request) {
+			http.ServeFileFS(w, r, style.CSSFiles, "style.css")
+		})
 		mux.HandleFunc("GET /register", authHandler.HandleIndex)
 		mux.HandleFunc("POST /register", authHandler.HandleRegister)
 		mux.HandleFunc("GET /queue", authHandler.Wrap(queueHandler.HandleIndex))
@@ -175,6 +179,9 @@ func main() {
 		mux.HandleFunc("GET /queue/members", authHandler.Wrap(queueHandler.HandleMemberList))
 		//mux.HandleFunc("GET /sse", authHandler.Wrap(queueHandler.HandleSSE))
 	} else {
+		mux.Handle("GET /style.css", gziphandler.GzipHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			http.ServeFileFS(w, r, style.CSSFiles, "style.css")
+		})))
 		mux.Handle("GET /register", gziphandler.GzipHandler(http.HandlerFunc(authHandler.HandleIndex)))
 		mux.Handle("POST /register", gziphandler.GzipHandler(http.HandlerFunc(authHandler.HandleRegister)))
 		mux.Handle("GET /queue", gziphandler.GzipHandler(http.HandlerFunc(authHandler.Wrap(queueHandler.HandleIndex))))

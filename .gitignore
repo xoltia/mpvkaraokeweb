@@ -3,3 +3,5 @@
 *.db
 vidcache
 *.log
+bin
+style/style.css
