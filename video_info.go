@@ -26,7 +26,7 @@ func getVideoInfo(ctx context.Context, vidURL string) (vid videoInfo, err error)
 	}
 
 	switch u.Host {
-	case "youtube.com", "www.youtube.com":
+	case "youtube.com", "www.youtube.com", "youtu.be":
 		if vid, err = getYouTubeVideoFast(ctx, vidURL); err == nil {
 			return
 		}
