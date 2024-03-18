@@ -132,7 +132,7 @@ func (h *QueueHandler) HandlePostPreview(w http.ResponseWriter, r *http.Request)
 		songURL,
 		lyricsURL,
 		video.thumbnail,
-		time.Duration(video.duration)*time.Second,
+		video.duration,
 	).Render(r.Context(), w)
 }
 
