@@ -164,6 +164,10 @@ func main() {
 		http.Redirect(w, r, "/queue", http.StatusFound)
 	})
 
+	mux.HandleFunc("GET /favicon.ico", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	})
+
 	if *noCompression {
 		mux.HandleFunc("GET /style.css", func(w http.ResponseWriter, r *http.Request) {
 			http.ServeFileFS(w, r, style.CSSFiles, "style.css")
