@@ -239,6 +239,8 @@ func (h *QueueHandler) HandleSSE(w http.ResponseWriter, r *http.Request) {
 			case RemoveQueue:
 				fmt.Fprintf(w, "event: %s:%d\ndata:\n\n", RemoveQueue, event.SongID)
 				fmt.Fprint(w, "event: queue:change\ndata:\n\n")
+			case SessionJoin:
+				fmt.Fprintf(w, "event: %s\ndata:%s\n\n", SessionJoin, event.Session.ID)
 			}
 			w.(http.Flusher).Flush()
 		}
