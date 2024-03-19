@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -136,6 +137,16 @@ func (h *QueueHandler) HandlePostPreview(w http.ResponseWriter, r *http.Request)
 	).Render(r.Context(), w)
 }
 
+func checkURL(s string) bool {
+	u, err := url.Parse(s)
+
+	if err != nil {
+		return false
+	}
+
+	return u.Scheme == "http" || u.Scheme == "https"
+}
+
 func (h *QueueHandler) HandlePostSubmission(w http.ResponseWriter, r *http.Request) {
 	session := r.Context().Value(sessionKey).(Session)
 	title := r.FormValue("title")
@@ -143,6 +154,16 @@ func (h *QueueHandler) HandlePostSubmission(w http.ResponseWriter, r *http.Reque
 	lyricsURL := r.FormValue("lyricsURL")
 	durationString := r.FormValue("duration")
 	thumbnail := r.FormValue("thumbnailURL")
+
+	if !checkURL(songURL) {
+		http.Error(w, "invalid URL", http.StatusBadRequest)
+		return
+	}
+
+	if lyricsURL != "" && !checkURL(lyricsURL) {
+		http.Error(w, "invalid lyrics URL", http.StatusBadRequest)
+		return
+	}
 
 	if title == "" {
 		http.Error(w, "title required", http.StatusBadRequest)
