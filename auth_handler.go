@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"net/http"
+	"slices"
 
 	"github.com/gorilla/sessions"
 	"golang.org/x/oauth2"
@@ -16,24 +17,26 @@ var userKey = "user"
 type User struct {
 	ID     string `json:"id"`
 	Avatar string `json:"avatar"`
-	Name   string `json:"username"`
-	Admin  bool   `json:"-"`
+
+	Name  string `json:"username"`
+	Admin bool   `json:"-"`
 }
 
 type guildMember struct {
-	User        User    `json:"user"`
-	Nick        *string `json:"nick"`
-	Permissions int     `json:"permissions"`
+	User  User     `json:"user"`
+	Nick  *string  `json:"nick"`
+	Roles []string `json:"roles"`
 }
 
 type AuthHandler struct {
-	store   sessions.Store
-	conf    *oauth2.Config
-	guildID string
+	store       sessions.Store
+	conf        *oauth2.Config
+	guildID     string
+	adminRoleID string
 }
 
-func NewAuthHandler(store sessions.Store, config *oauth2.Config, guildID string) *AuthHandler {
-	return &AuthHandler{store: store, conf: config, guildID: guildID}
+func NewAuthHandler(store sessions.Store, config *oauth2.Config, guildID, adminRoleID string) *AuthHandler {
+	return &AuthHandler{store: store, conf: config, guildID: guildID, adminRoleID: adminRoleID}
 }
 
 func (h *AuthHandler) HandleIndex(w http.ResponseWriter, r *http.Request) {
@@ -86,7 +89,10 @@ func (h *AuthHandler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	member.User.Admin = member.Permissions&8 == 8
+	if slices.Contains(member.Roles, h.adminRoleID) {
+		member.User.Admin = true
+	}
+
 	if member.Nick != nil {
 		member.User.Name = *member.Nick
 	}

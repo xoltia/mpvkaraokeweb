@@ -37,6 +37,7 @@ var (
 	clientID       = flag.String("client-id", "", "discord client ID (required)")
 	clientSecret   = flag.String("client-secret", "", "discord client secret (required)")
 	guildID        = flag.String("guild-id", "", "discord guild ID (required)")
+	adminRole      = flag.String("admin-role", "", "discord admin role")
 	ngrokDomain    = flag.String("ngrok-domain", "", "ngrok domain (required)")
 	ngrokToken     = flag.String("ngrok-token", "", "ngrok authtoken (required)")
 )
@@ -218,7 +219,7 @@ func main() {
 		},
 	}
 
-	authHandler := mpvwebkaraoke.NewAuthHandler(store, conf, *guildID)
+	authHandler := mpvwebkaraoke.NewAuthHandler(store, conf, *guildID, *adminRole)
 	queueHandler := mpvwebkaraoke.NewQueueHandler(queue, *maxUserQueue)
 
 	queue.OnPush(func(song mpvwebkaraoke.Song) {
