@@ -64,42 +64,17 @@ func (q *Queue) recoverChanges() error {
 	defer q.mu.Unlock()
 
 	currentFile, err := os.Open("current.gob")
-	currentFileExists := !os.IsNotExist(err)
-	if err != nil && currentFileExists {
+	if err != nil {
 		return err
 	}
 
-	dequeuedFile, err := os.Open("dequeued.gob")
-	dequeuedFileExists := !os.IsNotExist(err)
-	if err != nil && dequeuedFileExists {
+	if os.IsNotExist(err) {
+		return nil
+	}
+
+	dec := gob.NewDecoder(currentFile)
+	if err := dec.Decode(&q.current); err != nil {
 		return err
-	}
-
-	revokedFile, err := os.Open("revoked.gob")
-	revokedFileExists := !os.IsNotExist(err)
-	if err != nil && revokedFileExists {
-		return err
-	}
-
-	if currentFileExists {
-		dec := gob.NewDecoder(currentFile)
-		if err := dec.Decode(&q.current); err != nil {
-			return err
-		}
-	}
-
-	if dequeuedFileExists {
-		dec := gob.NewDecoder(dequeuedFile)
-		if err := dec.Decode(&q.dequeued); err != nil {
-			return err
-		}
-	}
-
-	if revokedFileExists {
-		dec := gob.NewDecoder(revokedFile)
-		if err := dec.Decode(&q.revoked); err != nil {
-			return err
-		}
 	}
 
 	for _, song := range q.current {
@@ -120,47 +95,16 @@ func (q *Queue) persistChanges() error {
 		return err
 	}
 
-	dequeuedTempFile, err := os.CreateTemp("", "dequeued.*.gob")
-	if err != nil {
-		return err
-	}
-
-	revokedTempFile, err := os.CreateTemp("", "revoked.*.gob")
-	if err != nil {
-		return err
-	}
-
 	enc := gob.NewEncoder(currentTempFile)
 	if err := enc.Encode(q.current); err != nil {
-		return err
-	}
-
-	enc = gob.NewEncoder(dequeuedTempFile)
-	if err := enc.Encode(q.dequeued); err != nil {
-		return err
-	}
-
-	enc = gob.NewEncoder(revokedTempFile)
-	if err := enc.Encode(q.revoked); err != nil {
 		return err
 	}
 
 	if err := currentTempFile.Close(); err != nil {
 		return err
 	}
-	if err := dequeuedTempFile.Close(); err != nil {
-		return err
-	}
-	if err := revokedTempFile.Close(); err != nil {
-		return err
-	}
+
 	if err := os.Rename(currentTempFile.Name(), "current.gob"); err != nil {
-		return err
-	}
-	if err := os.Rename(dequeuedTempFile.Name(), "dequeued.gob"); err != nil {
-		return err
-	}
-	if err := os.Rename(revokedTempFile.Name(), "revoked.gob"); err != nil {
 		return err
 	}
 

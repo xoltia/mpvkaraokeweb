@@ -235,6 +235,6 @@ func main() {
 		log.Fatal(err)
 	}
 
-	log.Println("listening on", listener.Addr())
+	log.Printf("listening on https://%s\n", listener.Addr())
 	http.Serve(listener, mux)
 }
