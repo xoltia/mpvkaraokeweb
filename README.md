@@ -12,7 +12,7 @@ Use `make` to build the server. A static build will be output to `bin/mpvkaraoke
 ### Dependencies
 - Go 1.22
 - Node, npm
-- templ
+- [a-h/templ CLI](https://templ.guide/quick-start/installation)
 
 ## Running
 Run the server with `./bin/mpvkaraoke`. See `--help` for available options.
