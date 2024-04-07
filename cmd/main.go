@@ -197,6 +197,8 @@ func main() {
 
 	if *noCompression {
 		mux.HandleFunc("GET /style.css", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "text/css")
+			w.Header().Set("Cache-Control", "max-age=31536000")
 			http.ServeFileFS(w, r, style.CSSFiles, "style.css")
 		})
 		mux.HandleFunc("GET /queue", authHandler.Wrap(queueHandler.HandleIndex))
@@ -209,6 +211,8 @@ func main() {
 		//mux.HandleFunc("GET /sse", authHandler.Wrap(queueHandler.HandleSSE))
 	} else {
 		mux.Handle("GET /style.css", gziphandler.GzipHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "text/css")
+			w.Header().Set("Cache-Control", "max-age=31536000")
 			http.ServeFileFS(w, r, style.CSSFiles, "style.css")
 		})))
 		mux.Handle("GET /queue", gziphandler.GzipHandler(http.HandlerFunc(authHandler.Wrap(queueHandler.HandleIndex))))
