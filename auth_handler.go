@@ -15,11 +15,11 @@ import (
 var userKey = "user"
 
 type User struct {
-	ID     string `json:"id"`
-	Avatar string `json:"avatar"`
-
-	Name  string `json:"username"`
-	Admin bool   `json:"-"`
+	ID            string `json:"id"`
+	Avatar        string `json:"avatar"`
+	Discriminator string `json:"discriminator"`
+	Name          string `json:"username"`
+	Admin         bool   `json:"-"`
 }
 
 type guildMember struct {

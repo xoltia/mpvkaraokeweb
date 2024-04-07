@@ -3,11 +3,34 @@ package mpvwebkaraoke
 import (
     "net/url"
 	"fmt"
+	"strconv"
 )
 
 type Member struct {
     User
     QueueOpen bool
+}
+
+func (m Member) avatarURL(size int) string {
+    if m.Avatar == "" {
+        return m.defaultAvatarURL()
+    }
+
+    return fmt.Sprintf("https://cdn.discordapp.com/avatars/%s/%s.png?size=%d", m.ID, m.Avatar, size)
+}
+
+func (m Member) defaultAvatarURL() string {
+    var index int
+
+    if m.Discriminator == "0" {
+        id, _ := strconv.Atoi(m.ID)
+        index = (id >> 22) % 6
+    } else {
+        disc, _ := strconv.Atoi(m.Discriminator)
+        index = disc % 5
+    }
+
+    return fmt.Sprintf("https://cdn.discordapp.com/embed/avatars/%d.png", index)
 }
 
 func urlDomain(urlString string) string {
@@ -78,38 +101,19 @@ templ membersList(sessions []Member) {
         hx-trigger="sse:session:join, sse:queue:change, sse:session:leave">
         for _, session := range sessions {
             <li class="flex items-center gap-2 mb-2">
-                if session.Admin {
-                    <svg width="24px" height="24px" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" color="#dfa0ca" stroke-width="1.5">
-                        <title>Admin</title>
-                        <path d="M4.63495 14.4151L5.67396 12.2121C5.80734 11.9293 6.19266 11.9293 6.32604 12.2121L7.36505 14.4151L9.68859 14.7706C9.98671 14.8162 10.1055 15.1997 9.8897 15.4198L8.2087 17.1334L8.60542 19.5543C8.65636 19.8652 8.34456 20.1022 8.07781 19.9554L6 18.8118L3.92219 19.9554C3.65544 20.1022 3.34363 19.8652 3.39458 19.5543L3.7913 17.1334L2.1103 15.4198C1.89447 15.1997 2.01329 14.8162 2.31141 14.7706L4.63495 14.4151Z"  
-                            fill="#dfa0ca" stroke="#dfa0ca" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path>
-                        <path d="M16.6349 14.4151L17.674 12.2121C17.8073 11.9293 18.1927 11.9293 18.326 12.2121L19.3651 14.4151L21.6886 14.7706C21.9867 14.8162 22.1055 15.1997 21.8897 15.4198L20.2087 17.1334L20.6054 19.5543C20.6564 19.8652 20.3446 20.1022 20.0778 19.9554L18 18.8118L15.9222 19.9554C15.6554 20.1022 15.3436 19.8652 15.3946 19.5543L15.7913 17.1334L14.1103 15.4198C13.8945 15.1997 14.0133 14.8162 14.3114 14.7706L16.6349 14.4151Z"
-                            fill="#dfa0ca" stroke="#dfa0ca" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path>
-                        <path d="M10.6349 5.41515L11.674 3.21211C11.8073 2.9293 12.1927 2.9293 12.326 3.21211L13.3651 5.41515L15.6886 5.7706C15.9867 5.8162 16.1055 6.19974 15.8897 6.41976L14.2087 8.13337L14.6054 10.5543C14.6564 10.8652 14.3446 11.1022 14.0778 10.9554L12 9.81178L9.92219 10.9554C9.65544 11.1022 9.34363 10.8652 9.39458 10.5543L9.7913 8.13337L8.1103 6.41976C7.89447 6.19974 8.01329 5.8162 8.31141 5.7706L10.6349 5.41515Z"
-                            fill="#dfa0ca" stroke="#dfa0ca" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path>
-                    </svg>
-                } else if session.QueueOpen {
-                    <svg width="24px" height="24px" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" color="#dfa0ca" stroke-width="1.5">
-                        <title>Queue Available</title>
-                        <path d="M8.58737 8.23597L11.1849 3.00376C11.5183 2.33208 12.4817 2.33208 12.8151 3.00376L15.4126 8.23597L21.2215 9.08017C21.9668 9.18848 22.2638 10.0994 21.7243 10.6219L17.5217 14.6918L18.5135 20.4414C18.6409 21.1798 17.8614 21.7428 17.1945 21.3941L12 18.678L6.80547 21.3941C6.1386 21.7428 5.35909 21.1798 5.48645 20.4414L6.47825 14.6918L2.27575 10.6219C1.73617 10.0994 2.03322 9.18848 2.77852 9.08017L8.58737 8.23597Z" 
-                            fill="#dfa0ca" stroke="#dfa0ca" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path>
-                    </svg>
-                } else {
-                <svg width="24px" height="24px" stroke-width="1.5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" color="#dfa0ca">
-                    <title>Queue Full</title>
-                    <path d="M13.8062 5L12.8151 3.00376C12.4817 2.33208 11.5184 2.33208 11.1849 3.00376L10.6894 4.00188" stroke="#dfa0ca" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path>
-                    <path d="M15.011 7.427L15.4126 8.23599L16.8648 8.44704" stroke="#dfa0ca" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path>
-                    <path d="M19.7693 8.86914L21.2215 9.08019C21.9668 9.1885 22.2639 10.0994 21.7243 10.6219L20.6736 11.6394" stroke="#dfa0ca" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path>
-                    <path d="M18.5724 13.6743L17.5217 14.6918L17.7697 16.1292" stroke="#dfa0ca" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path>
-                    <path d="M18.2656 19.0039L18.5135 20.4413C18.6409 21.1797 17.8614 21.7427 17.1945 21.394L15.8959 20.715" stroke="#dfa0ca" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path>
-                    <path d="M10.4279 19.5L12 18.678L13.2986 19.357" stroke="#dfa0ca" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path>
-                    <path d="M5.67145 19.3689L5.48645 20.4414C5.35908 21.1797 6.13859 21.7428 6.80546 21.3941L7.65273 20.9511" stroke="#dfa0ca" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path>
-                    <path d="M6.25259 16L6.47826 14.6917L5.78339 14.0188" stroke="#dfa0ca" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path><path d="M3.69875 12L2.27575 10.6219C1.73617 10.0993 2.03322 9.18844 2.77852 9.08012L3.88926 8.9187" stroke="#dfa0ca" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path>
-                    <path d="M7 8.4666L8.58737 8.23591L9.39062 6.61792" stroke="#dfa0ca" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path>
-                </svg>
-                }
-
-                <span>{session.Name}</span>
+                <img
+                    class={
+                        "rounded-full", "h-8", "w-8", "border-2",
+                        templ.KV("border-pink-300", session.Admin),
+                        templ.KV("border-sky-300", !session.Admin && session.QueueOpen),
+                        templ.KV("border-neutral-700", !session.Admin && !session.QueueOpen)
+                    }
+                    alt={session.Name}
+                    src={session.avatarURL(32)}
+                />
+                <span>
+                    {session.Name}
+                </span>
             </li>
         }
     </ul>
