@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/gob"
 	"flag"
 	"fmt"
@@ -32,6 +33,7 @@ var (
 	maxUserQueue   = flag.Int("max-queue", 1, "maximum number of songs a user can queue")
 	noCompression  = flag.Bool("no-compression", false, "disable gzip compression")
 	sessionSecret  = flag.String("session-secret", "secret", "session secret")
+	sessionEncrypt = flag.Bool("session-encrypt", false, "encrypt session data")
 	clientID       = flag.String("client-id", "", "discord client ID (required)")
 	clientSecret   = flag.String("client-secret", "", "discord client secret (required)")
 	guildID        = flag.String("guild-id", "", "discord guild ID (required)")
@@ -110,6 +112,38 @@ func loopMPV(queue *mpvwebkaraoke.Queue, cache mpvwebkaraoke.OnceCache) {
 	}
 }
 
+func saveKey(key []byte) error {
+	file, err := os.Create("sessions.key")
+	if err != nil {
+		return err
+	}
+
+	_, err = file.Write(key)
+	return nil
+}
+
+func loadEncryptionKey() ([]byte, error) {
+	key := make([]byte, 32)
+	file, err := os.Open("sessions.key")
+	if os.IsNotExist(err) {
+		_, err := rand.Read(key)
+		if err != nil {
+			return nil, err
+		}
+		err = saveKey(key)
+		return key, err
+	} else if err != nil {
+		return nil, err
+	}
+
+	_, err = file.Read(key)
+	if err != nil {
+		return nil, err
+	}
+
+	return key, nil
+}
+
 func checkFlags() {
 	if *clientID == "" {
 		log.Fatal("client ID is required")
@@ -161,13 +195,23 @@ func main() {
 		vidCache = mpvwebkaraoke.NewVideoCache(cacheConfig)
 	}
 
-	store := sessions.NewCookieStore([]byte(*sessionSecret))
+	var store *sessions.CookieStore
+
+	if !*sessionEncrypt {
+		store = sessions.NewCookieStore([]byte(*sessionSecret))
+	} else {
+		key, err := loadEncryptionKey()
+		if err != nil {
+			log.Fatal(err)
+		}
+		store = sessions.NewCookieStore([]byte(*sessionSecret), key)
+	}
+
 	conf := &oauth2.Config{
 		ClientID:     *clientID,
 		ClientSecret: *clientSecret,
-		// RedirectURL:  "http://localhost:8080/auth/callback",
-		RedirectURL: fmt.Sprintf("https://%s/auth/callback", *ngrokDomain),
-		Scopes:      []string{"identify", "guilds.members.read"},
+		RedirectURL:  fmt.Sprintf("https://%s/auth/callback", *ngrokDomain),
+		Scopes:       []string{"identify", "guilds.members.read"},
 		Endpoint: oauth2.Endpoint{
 			AuthURL:  "https://discord.com/api/oauth2/authorize",
 			TokenURL: "https://discord.com/api/oauth2/token",

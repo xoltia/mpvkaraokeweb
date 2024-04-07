@@ -5,7 +5,6 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
-	"fmt"
 	"net/http"
 
 	"github.com/gorilla/sessions"
@@ -86,8 +85,6 @@ func (h *AuthHandler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "failed to decode user info", http.StatusInternalServerError)
 		return
 	}
-
-	fmt.Println(member)
 
 	member.User.Admin = member.Permissions&8 == 8
 	if member.Nick != nil {
