@@ -1,4 +1,4 @@
-module github.com/UTD-JLA/mpvwebkaraoke
+module github.com/xoltia/mpvwebkaraoke
 
 go 1.22.0
 

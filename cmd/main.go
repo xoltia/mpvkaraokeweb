@@ -14,10 +14,10 @@ import (
 	"strings"
 
 	"github.com/NYTimes/gziphandler"
-	"github.com/UTD-JLA/mpvwebkaraoke"
-	"github.com/UTD-JLA/mpvwebkaraoke/style"
 	"github.com/gorilla/sessions"
 	"github.com/wader/goutubedl"
+	"github.com/xoltia/mpvwebkaraoke"
+	"github.com/xoltia/mpvwebkaraoke/style"
 	"golang.ngrok.com/ngrok"
 	"golang.ngrok.com/ngrok/config"
 	"golang.org/x/oauth2"
