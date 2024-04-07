@@ -6,3 +6,4 @@ vidcache
 bin
 style/style.css
 *.gob
+*.key
