@@ -23,7 +23,6 @@ Run the server with `./bin/mpvkaraoke`. See `--help` for available options.
 - imagemagick
 
 
-
 ### Setup
 1. Create an account on [ngrok](https://ngrok.com/) and get your auth token.
 2. Claim a domain on ngrok.
@@ -42,6 +41,45 @@ mpvkaraoke \
     --guild-id=DISCORD_GUILD_ID \
     --ngrok-domain=NGROK_DOMAIN \
     --ngrok-token=NGROK_TOKEN \
-    --max-queue=3 \
+    --admin-role=DISCORD_ADMIN_ROLE \
+    --max-queue=1 \
+    --session-encrypt \
     --disable-cache
+```
+
+### Options
+```
+Usage of mpvkaraoke:
+  -admin-role string
+        discord admin role
+  -cache string
+        path to video cache (default "vidcache")
+  -client-id string
+        discord client ID (required)
+  -client-secret string
+        discord client secret (required)
+  -db string
+        path to sqlite database (default "karaoke.sqlite")
+  -disable-cache
+        disable video cache
+  -disable-persist
+        disable queue persistence
+  -guild-id string
+        discord guild ID (required)
+  -max-queue int
+        maximum number of songs a user can queue (default 1)
+  -ngrok-domain string
+        ngrok domain (required)
+  -ngrok-token string
+        ngrok authtoken (required)
+  -no-compression
+        disable gzip compression
+  -session-encrypt
+        encrypt session data
+  -session-secret string
+        session secret (default "secret")
+  -ytdl string
+        path to youtube-dl (default "yt-dlp")
+  -ytdl-filter string
+        youtube-dl filter (default "bestvideo[ext=mp4][height<=1080]+bestaudio/best")
 ```
