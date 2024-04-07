@@ -1,523 +1,149 @@
 package mpvwebkaraoke
 
 import (
-	"context"
 	"database/sql"
-	"errors"
 	"sync"
 	"time"
 )
 
-var ErrLimitExceeded = errors.New("limit exceeded")
-
 type Song struct {
-	ID         int
-	Requester  Session
-	Title      string
-	Thumbnail  string
-	URL        string
-	LyricsURL  sql.NullString
-	Duration   time.Duration
-	Position   int
-	CreatedAt  time.Time
-	RevokedAt  sql.NullTime
-	DequeuedAt sql.NullTime
+	ID        int
+	Requester User
+	Title     string
+	Thumbnail string
+	URL       string
+	LyricsURL sql.NullString
+	Duration  time.Duration
 }
 
 type PushEventHandler func(Song)
 type RemoveEventHandler func(int)
 
 type Queue struct {
-	db               *sql.DB
-	pushHandlers     []PushEventHandler
-	pushHandlersMu   sync.Mutex
-	removeHandlers   []RemoveEventHandler
-	removeHandlersMu sync.Mutex
+	mu             sync.RWMutex
+	cond           *sync.Cond
+	id             int
+	userLimit      int
+	current        []Song
+	dequeued       []Song
+	revoked        []Song
+	pushHandlers   []PushEventHandler
+	removeHandlers []RemoveEventHandler
 }
 
-func NewQueue(db *sql.DB) *Queue {
-	return &Queue{
-		db:             db,
-		pushHandlers:   make([]PushEventHandler, 0),
-		removeHandlers: make([]RemoveEventHandler, 0),
+func NewQueue(perUserLimit int) *Queue {
+	q := &Queue{}
+	q.userLimit = perUserLimit
+	q.cond = sync.NewCond(&q.mu)
+	return q
+}
+
+func (q *Queue) Push(song Song) bool {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
+	var c int
+
+	if song.Requester.Admin {
+		goto push
 	}
-}
 
-func (q *Queue) OnPush(handler PushEventHandler) {
-	q.pushHandlersMu.Lock()
-	defer q.pushHandlersMu.Unlock()
-	q.pushHandlers = append(q.pushHandlers, handler)
-}
+	for _, s := range q.current {
+		if s.Requester.ID == song.Requester.ID {
+			c++
+		}
+	}
 
-func (q *Queue) OnRemove(handler RemoveEventHandler) {
-	q.removeHandlersMu.Lock()
-	defer q.removeHandlersMu.Unlock()
-	q.removeHandlers = append(q.removeHandlers, handler)
-}
+	if c == q.userLimit {
+		return false
+	}
 
-func (q *Queue) emitPush(s Song) {
-	q.pushHandlersMu.Lock()
-	defer q.pushHandlersMu.Unlock()
+push:
+	song.ID = q.id
+	q.current = append(q.current, song)
+	q.id++
+
 	for _, h := range q.pushHandlers {
-		h(s)
+		h(song)
 	}
+
+	q.cond.Signal()
+	return true
 }
 
-func (q *Queue) emitRemove(sID int) {
-	q.removeHandlersMu.Lock()
-	defer q.removeHandlersMu.Unlock()
+func (q *Queue) List() []Song {
+	q.mu.RLock()
+	defer q.mu.RUnlock()
+	songs := make([]Song, len(q.current))
+	copy(songs, q.current)
+	return songs
+}
+
+func (q *Queue) Freeze() (songs []Song, unlock func()) {
+	q.mu.RLock()
+	songs = make([]Song, len(q.current))
+	copy(songs, q.current)
+	return songs, q.mu.RUnlock
+}
+
+func (q *Queue) Revoke(id int) (ok bool) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
+	for i, song := range q.current {
+		if song.ID == id {
+			q.current = append(q.current[:i], q.current[i+1:]...)
+			q.revoked = append(q.revoked, song)
+
+			for _, h := range q.removeHandlers {
+				h(id)
+			}
+
+			return true
+		}
+	}
+
+	return false
+}
+
+func (q *Queue) Dequeue() Song {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
+	for len(q.current) == 0 {
+		q.cond.Wait()
+	}
+
+	song := q.current[0]
+	q.current = q.current[1:]
+	q.dequeued = append(q.dequeued, song)
+
 	for _, h := range q.removeHandlers {
-		h(sID)
+		h(song.ID)
 	}
+
+	return song
 }
 
-func (q *Queue) Init() error {
-	_, err := q.db.Exec(`
-		CREATE TABLE IF NOT EXISTS queue (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			requester_id INTEGER NOT NULL,
-			title TEXT NOT NULL,
-			url TEXT NOT NULL,
-			lyrics_url TEXT,
-			duration INTEGER NOT NULL,
-			position INTEGER DEFAULT 0,
-			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-			revoked_at TIMESTAMP,
-			dequeued_at TIMESTAMP,
-			thumbnail TEXT NOT NULL DEFAULT '',
-			available GENERATED ALWAYS AS (revoked_at IS NULL AND dequeued_at IS NULL) VIRTUAL,
-			FOREIGN KEY (requester_id) REFERENCES sessions(id)
-		)
-	`)
-	return err
+func (q *Queue) LastDequeued() (Song, bool) {
+	q.mu.RLock()
+	defer q.mu.RUnlock()
+
+	if len(q.dequeued) == 0 {
+		return Song{}, false
+	}
+
+	return q.dequeued[len(q.dequeued)-1], true
 }
 
-// GetByID retrieves a song by its ID.
-func (q *Queue) GetByID(id int) (s Song, err error) {
-	err = q.db.QueryRow(`
-		SELECT
-			s.id,
-			s.requester_id,
-			s.title,
-			s.url,
-			s.lyrics_url,
-			s.duration,
-			s.position,
-			s.created_at,
-			s.revoked_at,
-			s.dequeued_at,
-			u.user_name,
-			u.admin,
-			s.thumbnail
-		FROM queue s
-		JOIN sessions u ON s.requester_id = u.id
-		WHERE s.id = ?
-	`, id).Scan(
-		&s.ID,
-		&s.Requester.ID,
-		&s.Title,
-		&s.URL,
-		&s.LyricsURL,
-		&s.Duration,
-		&s.Position,
-		&s.CreatedAt,
-		&s.RevokedAt,
-		&s.DequeuedAt,
-		&s.Requester.UserName,
-		&s.Requester.Admin,
-		&s.Thumbnail,
-	)
-
-	return
+func (q *Queue) OnPush(h PushEventHandler) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	q.pushHandlers = append(q.pushHandlers, h)
 }
 
-// Push adds a song to the queue.
-// Sets the song's ID and CreatedAt fields.
-func (q *Queue) Push(song *Song) error {
-	err := q.db.QueryRow(`
-			INSERT INTO queue (requester_id, title, url, lyrics_url, duration, position, thumbnail)
-			VALUES (?, ?, ?, ?, ?, (SELECT COALESCE(MAX(position), 0) + 1 FROM queue), ?)
-			RETURNING id, created_at
-		`,
-		song.Requester.ID,
-		song.Title,
-		song.URL,
-		song.LyricsURL,
-		song.Duration,
-		song.Thumbnail,
-	).Scan(&song.ID, &song.CreatedAt)
-
-	if err == nil {
-		q.emitPush(*song)
-	}
-
-	return err
-}
-
-// PushLimitUser adds a song to the queue if the user has not exceeded the limit.
-func (q *Queue) PushLimitUser(song *Song, limit int) (err error) {
-	ctx := context.Background()
-	conn, err := q.db.Conn(ctx)
-
-	if err != nil {
-		return
-	}
-
-	defer conn.Close()
-
-	_, err = conn.ExecContext(ctx, "BEGIN IMMEDIATE TRANSACTION;")
-	if err != nil {
-		return
-	}
-
-	defer func() {
-		if err != nil {
-			conn.ExecContext(ctx, "ROLLBACK TRANSACTION;")
-		} else {
-			conn.ExecContext(ctx, "END TRANSACTION;")
-		}
-	}()
-
-	var count int
-	err = conn.QueryRowContext(ctx, `
-		SELECT COUNT(*)
-		FROM queue
-		WHERE requester_id = ? AND available
-	`, song.Requester.ID).Scan(&count)
-
-	if err != nil {
-		return
-	}
-
-	if count >= limit {
-		return ErrLimitExceeded
-	}
-
-	err = conn.QueryRowContext(ctx, `
-			INSERT INTO queue (requester_id, title, url, lyrics_url, duration, position, thumbnail)
-			VALUES (?, ?, ?, ?, ?, (SELECT COALESCE(MAX(position), 0) + 1 FROM queue), ?)
-			RETURNING id, created_at
-		`,
-		song.Requester.ID,
-		song.Title,
-		song.URL,
-		song.LyricsURL,
-		song.Duration,
-		song.Thumbnail,
-	).Scan(&song.ID, &song.CreatedAt)
-
-	if err == nil {
-		q.emitPush(*song)
-	}
-
-	return
-}
-
-// Shift returns the next song, removing it from the queue and shifting all other songs up.
-func (q *Queue) Shift() (s Song, err error) {
-	ctx := context.Background()
-	conn, err := q.db.Conn(ctx)
-
-	if err != nil {
-		return
-	}
-
-	defer conn.Close()
-
-	_, err = conn.ExecContext(ctx, "BEGIN IMMEDIATE TRANSACTION;")
-	if err != nil {
-		return
-	}
-
-	defer func() {
-		if err != nil {
-			conn.ExecContext(ctx, "ROLLBACK TRANSACTION;")
-		} else {
-			conn.ExecContext(ctx, "END TRANSACTION;")
-		}
-	}()
-
-	err = conn.QueryRowContext(ctx, `
-		SELECT
-			s.id,
-			s.requester_id,
-			s.title,
-			s.url,
-			s.lyrics_url,
-			s.duration,
-			s.position,
-			s.created_at,
-			s.revoked_at,
-			s.dequeued_at,
-			u.user_name,
-			u.admin,
-			s.thumbnail
-		FROM queue s
-		JOIN sessions u ON s.requester_id = u.id
-		WHERE s.position = 1
-	`).Scan(
-		&s.ID,
-		&s.Requester.ID,
-		&s.Title,
-		&s.URL,
-		&s.LyricsURL,
-		&s.Duration,
-		&s.Position,
-		&s.CreatedAt,
-		&s.RevokedAt,
-		&s.DequeuedAt,
-		&s.Requester.UserName,
-		&s.Requester.Admin,
-		&s.Thumbnail,
-	)
-
-	if err != nil {
-		return
-	}
-
-	_, err = conn.ExecContext(ctx, `
-		UPDATE queue
-		SET dequeued_at = CURRENT_TIMESTAMP
-		WHERE id = ?
-	`, s.ID)
-
-	if err != nil {
-		return
-	}
-
-	q.emitRemove(s.ID)
-
-	_, err = conn.ExecContext(ctx, `
-		UPDATE queue
-		SET position = position - 1
-	`)
-
-	return
-}
-
-// Revoke removes a song from the queue.
-func (q *Queue) Revoke(id int) error {
-	_, err := q.db.Exec(`
-		UPDATE queue
-		SET revoked_at = CURRENT_TIMESTAMP
-		WHERE id = ?
-	`, id)
-
-	if err == nil {
-		q.emitRemove(id)
-	}
-
-	return err
-}
-
-// List returns all songs in the queue.
-func (q *Queue) List() (songs []Song, err error) {
-	rows, err := q.db.Query(`
-		SELECT
-			s.id,
-			s.requester_id,
-			s.title,
-			s.url,
-			s.lyrics_url,
-			s.duration,
-			s.position,
-			s.created_at,
-			s.revoked_at,
-			s.dequeued_at,
-			u.user_name,
-			u.admin,
-			s.thumbnail
-		FROM queue s
-		JOIN sessions u ON s.requester_id = u.id
-		WHERE s.available
-		ORDER BY s.position
-	`)
-
-	if err != nil {
-		return
-	}
-
-	defer rows.Close()
-
-	for rows.Next() {
-		var s Song
-		err = rows.Scan(
-			&s.ID,
-			&s.Requester.ID,
-			&s.Title,
-			&s.URL,
-			&s.LyricsURL,
-			&s.Duration,
-			&s.Position,
-			&s.CreatedAt,
-			&s.RevokedAt,
-			&s.DequeuedAt,
-			&s.Requester.UserName,
-			&s.Requester.Admin,
-			&s.Thumbnail,
-		)
-		if err != nil {
-			return
-		}
-		songs = append(songs, s)
-	}
-
-	err = rows.Err()
-	return
-}
-
-// ListLocked returns all songs in the queue, locking the rows for update, and
-// a function to release the lock.
-func (q *Queue) ListLocked() (songs []Song, unlock func() error, err error) {
-	ctx := context.Background()
-	conn, err := q.db.Conn(ctx)
-
-	if err != nil {
-		return
-	}
-
-	_, err = conn.ExecContext(ctx, "BEGIN EXCLUSIVE TRANSACTION;")
-	if err != nil {
-		return
-	}
-
-	defer func() {
-		if err != nil {
-			conn.ExecContext(ctx, "END TRANSACTION;")
-			conn.Close()
-		}
-	}()
-
-	rows, err := conn.QueryContext(ctx, `
-		SELECT
-			s.id,
-			s.requester_id,
-			s.title,
-			s.url,
-			s.lyrics_url,
-			s.duration,
-			s.position,
-			s.created_at,
-			s.revoked_at,
-			s.dequeued_at,
-			u.user_name,
-			u.admin,
-			s.thumbnail
-		FROM queue s
-		JOIN sessions u ON s.requester_id = u.id
-		WHERE s.available
-		ORDER BY s.position
-	`)
-	if err != nil {
-		return
-	}
-
-	for rows.Next() {
-		var s Song
-		err = rows.Scan(
-			&s.ID,
-			&s.Requester.ID,
-			&s.Title,
-			&s.URL,
-			&s.LyricsURL,
-			&s.Duration,
-			&s.Position,
-			&s.CreatedAt,
-			&s.RevokedAt,
-			&s.DequeuedAt,
-			&s.Requester.UserName,
-			&s.Requester.Admin,
-			&s.Thumbnail,
-		)
-		if err != nil {
-			return
-		}
-		songs = append(songs, s)
-	}
-
-	if err = rows.Err(); err != nil {
-		return
-	}
-
-	unlock = func() error {
-		_, err := conn.ExecContext(ctx, "END TRANSACTION;")
-		conn.Close()
-		return err
-	}
-
-	return
-}
-
-// Move moves a song with the given ID to the given position.
-func (q *Queue) Move(id, position int) error {
-	tx, err := q.db.Begin()
-	if err != nil {
-		return err
-	}
-
-	defer func() {
-		if err != nil {
-			tx.Rollback()
-		} else {
-			tx.Commit()
-		}
-	}()
-
-	_, err = tx.Exec(`
-		UPDATE queue
-		SET position = position + 1
-		WHERE position >= ?
-	`, position)
-
-	if err != nil {
-		return err
-	}
-
-	_, err = tx.Exec(`
-		UPDATE queue
-		SET position = ?
-		WHERE id = ?
-	`, position, id)
-
-	return err
-}
-
-func (q *Queue) LastDequeued() (s Song, err error) {
-	err = q.db.QueryRow(`
-		SELECT
-			s.id,
-			s.requester_id,
-			s.title,
-			s.url,
-			s.lyrics_url,
-			s.duration,
-			s.position,
-			s.created_at,
-			s.revoked_at,
-			s.dequeued_at,
-			u.user_name,
-			u.admin,
-			s.thumbnail
-		FROM queue s
-		JOIN sessions u ON s.requester_id = u.id
-		WHERE s.dequeued_at IS NOT NULL
-		ORDER BY s.dequeued_at DESC
-		LIMIT 1
-	`).Scan(
-		&s.ID,
-		&s.Requester.ID,
-		&s.Title,
-		&s.URL,
-		&s.LyricsURL,
-		&s.Duration,
-		&s.Position,
-		&s.CreatedAt,
-		&s.RevokedAt,
-		&s.DequeuedAt,
-		&s.Requester.UserName,
-		&s.Requester.Admin,
-		&s.Thumbnail,
-	)
-
-	return
+func (q *Queue) OnRemove(h RemoveEventHandler) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	q.removeHandlers = append(q.removeHandlers, h)
 }

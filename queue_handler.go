@@ -3,7 +3,6 @@ package mpvwebkaraoke
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -16,10 +15,11 @@ import (
 
 type QueueHandler struct {
 	queue            *Queue
-	sessions         *SessionStore
 	listeners        []chan<- queueEvent
 	listenersMu      sync.RWMutex
 	maxUserQueueSize int
+	connections      map[User]int
+	connectionsMu    sync.RWMutex
 }
 
 type eventType string
@@ -29,21 +29,22 @@ const (
 	AppendQueue   eventType = "queue:push"
 	RemoveQueue   eventType = "queue:remove"
 	SessionJoin   eventType = "session:join"
+	SessionLeave  eventType = "session:leave"
 )
 
 type queueEvent struct {
-	Event   eventType
-	Song    Song
-	SongID  int
-	Session Session
+	Event  eventType
+	Song   Song
+	SongID int
+	User   User
 }
 
-func NewQueueHandler(queue *Queue, sessions *SessionStore, maxUserQueueSize int) *QueueHandler {
+func NewQueueHandler(queue *Queue, maxUserQueueSize int) *QueueHandler {
 	h := &QueueHandler{
 		queue:            queue,
-		sessions:         sessions,
 		listeners:        make([]chan<- queueEvent, 0),
 		maxUserQueueSize: maxUserQueueSize,
+		connections:      make(map[User]int),
 	}
 
 	queue.OnPush(func(s Song) {
@@ -52,10 +53,6 @@ func NewQueueHandler(queue *Queue, sessions *SessionStore, maxUserQueueSize int)
 
 	queue.OnRemove(func(id int) {
 		h.sendEvent(queueEvent{Event: RemoveQueue, SongID: id})
-	})
-
-	sessions.OnCreate(func(s Session) {
-		h.sendEvent(queueEvent{Event: SessionJoin, Session: s})
 	})
 
 	return h
@@ -87,11 +84,8 @@ func (h *QueueHandler) sendEvent(e queueEvent) {
 	}
 }
 
-func (h *QueueHandler) renderQueueLocked(ctx context.Context) (html string, unlock func() error, err error) {
-	songs, unlock, err := h.queue.ListLocked()
-	if err != nil {
-		return
-	}
+func (h *QueueHandler) renderQueueLocked(ctx context.Context) (html string, unlock func()) {
+	songs, unlock := h.queue.Freeze()
 
 	table := &strings.Builder{}
 	queueTable(songs).Render(ctx, table)
@@ -100,12 +94,7 @@ func (h *QueueHandler) renderQueueLocked(ctx context.Context) (html string, unlo
 }
 
 func (h *QueueHandler) HandleIndex(w http.ResponseWriter, r *http.Request) {
-	songs, err := h.queue.List()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
+	songs := h.queue.List()
 	queuePage(songs).Render(r.Context(), w)
 }
 
@@ -148,7 +137,7 @@ func checkURL(s string) bool {
 }
 
 func (h *QueueHandler) HandlePostSubmission(w http.ResponseWriter, r *http.Request) {
-	session := r.Context().Value(sessionKey).(Session)
+	user := r.Context().Value(userKey).(User)
 	title := r.FormValue("title")
 	songURL := r.FormValue("url")
 	lyricsURL := r.FormValue("lyricsURL")
@@ -182,7 +171,7 @@ func (h *QueueHandler) HandlePostSubmission(w http.ResponseWriter, r *http.Reque
 	}
 
 	song := Song{
-		Requester: session,
+		Requester: user,
 		Title:     title,
 		URL:       songURL,
 		Duration:  duration,
@@ -190,19 +179,9 @@ func (h *QueueHandler) HandlePostSubmission(w http.ResponseWriter, r *http.Reque
 		Thumbnail: thumbnail,
 	}
 
-	if session.Admin {
-		err = h.queue.Push(&song)
-	} else {
-		err = h.queue.PushLimitUser(&song, h.maxUserQueueSize)
-	}
-
-	if errors.Is(err, ErrLimitExceeded) {
+	ok := h.queue.Push(song)
+	if !ok {
 		fmt.Fprint(w, "<span class=\"p-2\">You must wait for your song to be played before submitting another.</span>")
-		return
-	}
-
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -211,6 +190,7 @@ func (h *QueueHandler) HandlePostSubmission(w http.ResponseWriter, r *http.Reque
 }
 
 func (h *QueueHandler) HandleSSE(w http.ResponseWriter, r *http.Request) {
+	user := r.Context().Value(userKey).(User)
 	contentType := strings.ToLower(r.Header.Get("Accept"))
 
 	if contentType != "text/event-stream" {
@@ -222,24 +202,13 @@ func (h *QueueHandler) HandleSSE(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 
-	c := make(chan queueEvent)
-
-	t, unlock, err := h.renderQueueLocked(r.Context())
-	if err != nil {
-		log.Println(err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
+	c := make(chan queueEvent, 64)
+	t, unlock := h.renderQueueLocked(r.Context())
 	h.addListener(c)
-
-	if err = unlock(); err != nil {
-		log.Println(err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
+	unlock()
 	defer h.removeListener(c)
+	h.incConnection(user)
+	defer h.decConnection(user)
 
 	fmt.Fprintf(w, "event: %s\ndata: %s\n\n", RerenderQueue, t)
 	w.(http.Flusher).Flush()
@@ -261,7 +230,10 @@ func (h *QueueHandler) HandleSSE(w http.ResponseWriter, r *http.Request) {
 				fmt.Fprintf(w, "event: %s:%d\ndata:\n\n", RemoveQueue, event.SongID)
 				fmt.Fprint(w, "event: queue:change\ndata:\n\n")
 			case SessionJoin:
-				fmt.Fprintf(w, "event: %s\ndata:%s\n\n", SessionJoin, event.Session.ID)
+				fmt.Fprintf(w, "event: %s\ndata:%s\n\n", SessionJoin, event.User.ID)
+			case SessionLeave:
+				fmt.Printf("event: %s\ndata:%s\n\n", SessionJoin, event.User.ID)
+				fmt.Fprintf(w, "event: %s\ndata:%s\n\n", SessionJoin, event.User.ID)
 			}
 			w.(http.Flusher).Flush()
 		}
@@ -269,8 +241,8 @@ func (h *QueueHandler) HandleSSE(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *QueueHandler) HandleRevoke(w http.ResponseWriter, r *http.Request) {
-	session := r.Context().Value(sessionKey).(Session)
-	if !session.Admin {
+	user := r.Context().Value(userKey).(User)
+	if !user.Admin {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
@@ -282,9 +254,9 @@ func (h *QueueHandler) HandleRevoke(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = h.queue.Revoke(id)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+	ok := h.queue.Revoke(id)
+	if !ok {
+		http.Error(w, "song not found", http.StatusNotFound)
 		return
 	}
 
@@ -292,58 +264,62 @@ func (h *QueueHandler) HandleRevoke(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *QueueHandler) HandleCurrentSong(w http.ResponseWriter, r *http.Request) {
-	lastDequeud, err := h.queue.LastDequeued()
+	lastDequeud, ok := h.queue.LastDequeued()
 
-	if errors.Is(err, sql.ErrNoRows) {
+	if !ok {
 		// No song has been dequeued yet.
 		currentlyPlaying(nil, false).Render(r.Context(), w)
-		return
-	}
-
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	currentlyPlaying(&lastDequeud, false).Render(r.Context(), w)
 }
 
+func (h *QueueHandler) incConnection(u User) {
+	h.connectionsMu.Lock()
+	defer h.connectionsMu.Unlock()
+	h.connections[u]++
+	if h.connections[u] == 1 {
+		h.sendEvent(queueEvent{Event: SessionJoin, User: u})
+	}
+}
+
+func (h *QueueHandler) decConnection(u User) {
+	h.connectionsMu.Lock()
+	defer h.connectionsMu.Unlock()
+	h.connections[u]--
+	if h.connections[u] == 0 {
+		h.sendEvent(queueEvent{Event: SessionLeave, User: u})
+	}
+}
+
 func (h *QueueHandler) HandleMemberList(w http.ResponseWriter, r *http.Request) {
-	sessions, err := h.sessions.GetAll()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
+	h.connectionsMu.RLock()
+	defer h.connectionsMu.RUnlock()
+	sessions := h.connections
+	queue := h.queue.List()
+	members := make([]Member, 0, len(sessions))
 
-	queue, err := h.queue.List()
-
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	members := make([]Member, len(sessions))
-
-	for i, s := range sessions {
-		if s.Admin {
-			members[i] = Member{
-				Session:   s,
+	for u := range sessions {
+		if u.Admin {
+			members = append(members, Member{
+				User:      u,
 				QueueOpen: true,
-			}
+			})
 			continue
 		}
 
 		count := 0
 		for _, q := range queue {
-			if q.Requester.ID == s.ID {
+			if q.Requester.ID == u.ID {
 				count++
 			}
 		}
 
-		members[i] = Member{
-			Session:   s,
+		members = append(members, Member{
+			User:      u,
 			QueueOpen: count < h.maxUserQueueSize,
-		}
+		})
 	}
 
 	membersList(members).Render(r.Context(), w)

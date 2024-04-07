@@ -6,7 +6,7 @@ import (
 )
 
 type Member struct {
-    Session
+    User
     QueueOpen bool
 }
 
@@ -19,12 +19,12 @@ func urlDomain(urlString string) string {
 }
 
 func adminSession(ctx context.Context) bool {
-    session, ok := ctx.Value(sessionKey).(Session)
+    session, ok := ctx.Value(userKey).(User)
     return ok && session.Admin
 }
 
 func matchSession(ctx context.Context, sid string) bool {
-    session, ok := ctx.Value(sessionKey).(Session)
+    session, ok := ctx.Value(userKey).(User)
     return ok && session.ID == sid
 }
 
@@ -75,7 +75,7 @@ templ queuePage(songs []Song) {
 
 templ membersList(sessions []Member) {
     <ul class="list-none" hx-get="/queue/members" hx-swap="outerHTML"
-        hx-trigger="sse:session:join, sse:queue:change">
+        hx-trigger="sse:session:join, sse:queue:change, sse:session:leave">
         for _, session := range sessions {
             <li class="flex items-center gap-2 mb-2">
                 if session.Admin {
@@ -109,7 +109,7 @@ templ membersList(sessions []Member) {
                 </svg>
                 }
 
-                <span>{session.UserName}</span>
+                <span>{session.Name}</span>
             </li>
         }
     </ul>
@@ -137,7 +137,7 @@ templ songRow(song Song) {
                 <a href={templ.URL(song.URL)} target="_blank" class="text-sky-300">{song.Title}</a>
             </h2>
             <p class="text-sm">
-                Requested by: {song.Requester.UserName} - Duration: {song.Duration.String()}
+                Requested by: {song.Requester.Name} - Duration: {song.Duration.String()}
             </p>
         </div>
     </div>
@@ -159,7 +159,7 @@ templ currentlyPlaying(song *Song, firstLoad bool) {
                 <h2 class="text-lg font-bold leading-tight mb-1 line-clamp-2">
                     <a href={templ.URL(song.URL)} target="_blank">{song.Title}</a>
                 </h2>
-                <span class="text-sm">Requested by {song.Requester.UserName}</span>
+                <span class="text-sm">Requested by {song.Requester.Name}</span>
                 if song.LyricsURL.Valid {
                     <small class="block">
                         <a href={templ.URL(song.LyricsURL.String)} target="_blank" class="text-sky-300">View Lyrics</a>

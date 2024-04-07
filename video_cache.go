@@ -98,13 +98,11 @@ func (vc *VideoCache) Cache(ctx context.Context, vidURL string) {
 
 	vc.queueOnce.Do(func() {
 		log.Println("starting queue worker")
-		vc.queue = make(chan cacheJob)
+		vc.queue = make(chan cacheJob, 512)
 		go vc.queueWorker()
 	})
 
-	go func() {
-		vc.queue <- cacheJob{url: vidURL, ctx: ctxCancel}
-	}()
+	vc.queue <- cacheJob{url: vidURL, ctx: ctxCancel}
 }
 
 // GetOrCache returns the path to the cached video if it is available, or cancels the download if it is pending.
