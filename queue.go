@@ -64,12 +64,10 @@ func (q *Queue) recoverChanges() error {
 	defer q.mu.Unlock()
 
 	currentFile, err := os.Open("current.gob")
-	if err != nil {
-		return err
-	}
-
 	if os.IsNotExist(err) {
 		return nil
+	} else if err != nil {
+		return err
 	}
 
 	dec := gob.NewDecoder(currentFile)
