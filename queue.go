@@ -60,6 +60,9 @@ func (q *Queue) Start(ctx context.Context) error {
 }
 
 func (q *Queue) recoverChanges() error {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
 	currentFile, err := os.Open("current.gob")
 	currentFileExists := !os.IsNotExist(err)
 	if err != nil && currentFileExists {
@@ -109,6 +112,9 @@ func (q *Queue) recoverChanges() error {
 }
 
 func (q *Queue) persistChanges() error {
+	q.mu.RLock()
+	defer q.mu.RUnlock()
+
 	currentTempFile, err := os.CreateTemp("", "current.*.gob")
 	if err != nil {
 		return err
