@@ -32,7 +32,7 @@ Run the server with `./bin/mpvkaraoke`. See `--help` for available options.
 6. Run the server with the required flags.
 
 ### Example
-This command will start the application with the required flags, a maximum user queue of 3, and disable preemptive video caching.
+This command will start the application with the required flags, a maximum user queue of 1, and disable preemptive video caching.
 ```sh
 mpvkaraoke \
     --session-secret=SOME_SECRET \
