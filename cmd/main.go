@@ -16,7 +16,6 @@ import (
 	"github.com/UTD-JLA/mpvwebkaraoke"
 	"github.com/UTD-JLA/mpvwebkaraoke/style"
 	"github.com/gorilla/sessions"
-	_ "github.com/mattn/go-sqlite3"
 	"github.com/wader/goutubedl"
 	"golang.ngrok.com/ngrok"
 	"golang.ngrok.com/ngrok/config"
