@@ -5,3 +5,4 @@ vidcache
 *.log
 bin
 style/style.css
+*.gob

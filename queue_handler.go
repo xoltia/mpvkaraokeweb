@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"log"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -76,7 +75,6 @@ func (h *QueueHandler) removeListener(c chan<- queueEvent) {
 }
 
 func (h *QueueHandler) sendEvent(e queueEvent) {
-	log.Println("sending event", e)
 	h.listenersMu.RLock()
 	defer h.listenersMu.RUnlock()
 	for _, l := range h.listeners {

@@ -1,7 +1,11 @@
 package mpvwebkaraoke
 
 import (
+	"context"
 	"database/sql"
+	"encoding/gob"
+	"log"
+	"os"
 	"sync"
 	"time"
 )
@@ -31,6 +35,132 @@ type Queue struct {
 	removeHandlers []RemoveEventHandler
 }
 
+func (q *Queue) Start(ctx context.Context) error {
+	if err := q.recoverChanges(); err != nil {
+		return err
+	}
+
+	go func() {
+		ticker := time.NewTicker(5 * time.Second)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if err := q.persistChanges(); err != nil {
+					log.Println("error persisting changes:", err)
+				}
+			}
+		}
+	}()
+
+	return nil
+}
+
+func (q *Queue) recoverChanges() error {
+	currentFile, err := os.Open("current.gob")
+	currentFileExists := !os.IsNotExist(err)
+	if err != nil && currentFileExists {
+		return err
+	}
+
+	dequeuedFile, err := os.Open("dequeued.gob")
+	dequeuedFileExists := !os.IsNotExist(err)
+	if err != nil && dequeuedFileExists {
+		return err
+	}
+
+	revokedFile, err := os.Open("revoked.gob")
+	revokedFileExists := !os.IsNotExist(err)
+	if err != nil && revokedFileExists {
+		return err
+	}
+
+	if currentFileExists {
+		dec := gob.NewDecoder(currentFile)
+		if err := dec.Decode(&q.current); err != nil {
+			return err
+		}
+	}
+
+	if dequeuedFileExists {
+		dec := gob.NewDecoder(dequeuedFile)
+		if err := dec.Decode(&q.dequeued); err != nil {
+			return err
+		}
+	}
+
+	if revokedFileExists {
+		dec := gob.NewDecoder(revokedFile)
+		if err := dec.Decode(&q.revoked); err != nil {
+			return err
+		}
+	}
+
+	for _, song := range q.current {
+		if song.ID >= q.id {
+			q.id = song.ID + 1
+		}
+	}
+
+	return nil
+}
+
+func (q *Queue) persistChanges() error {
+	currentTempFile, err := os.CreateTemp("", "current.*.gob")
+	if err != nil {
+		return err
+	}
+
+	dequeuedTempFile, err := os.CreateTemp("", "dequeued.*.gob")
+	if err != nil {
+		return err
+	}
+
+	revokedTempFile, err := os.CreateTemp("", "revoked.*.gob")
+	if err != nil {
+		return err
+	}
+
+	enc := gob.NewEncoder(currentTempFile)
+	if err := enc.Encode(q.current); err != nil {
+		return err
+	}
+
+	enc = gob.NewEncoder(dequeuedTempFile)
+	if err := enc.Encode(q.dequeued); err != nil {
+		return err
+	}
+
+	enc = gob.NewEncoder(revokedTempFile)
+	if err := enc.Encode(q.revoked); err != nil {
+		return err
+	}
+
+	if err := currentTempFile.Close(); err != nil {
+		return err
+	}
+	if err := dequeuedTempFile.Close(); err != nil {
+		return err
+	}
+	if err := revokedTempFile.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(currentTempFile.Name(), "current.gob"); err != nil {
+		return err
+	}
+	if err := os.Rename(dequeuedTempFile.Name(), "dequeued.gob"); err != nil {
+		return err
+	}
+	if err := os.Rename(revokedTempFile.Name(), "revoked.gob"); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func NewQueue(perUserLimit int) *Queue {
 	q := &Queue{}
 	q.userLimit = perUserLimit
@@ -54,7 +184,7 @@ func (q *Queue) Push(song Song) bool {
 		}
 	}
 
-	if c == q.userLimit {
+	if c >= q.userLimit {
 		return false
 	}
 

@@ -24,19 +24,20 @@ import (
 )
 
 var (
-	dbPath        = flag.String("db", "karaoke.sqlite", "path to sqlite database")
-	cachePath     = flag.String("cache", "vidcache", "path to video cache")
-	disableCache  = flag.Bool("disable-cache", false, "disable video cache")
-	ytdlPath      = flag.String("ytdl", "yt-dlp", "path to youtube-dl")
-	ytdlFilter    = flag.String("ytdl-filter", "bestvideo[ext=mp4][height<=1080]+bestaudio/best", "youtube-dl filter")
-	maxUserQueue  = flag.Int("max-queue", 1, "maximum number of songs a user can queue")
-	noCompression = flag.Bool("no-compression", false, "disable gzip compression")
-	sessionSecret = flag.String("session-secret", "secret", "session secret")
-	clientID      = flag.String("client-id", "", "discord client ID")
-	clientSecret  = flag.String("client-secret", "", "discord client secret")
-	guildID       = flag.String("guild-id", "", "discord guild ID")
-	ngrokDomain   = flag.String("ngrok-domain", "", "ngrok domain")
-	ngrokToken    = flag.String("ngrok-token", "", "ngrok authtoken")
+	dbPath         = flag.String("db", "karaoke.sqlite", "path to sqlite database")
+	cachePath      = flag.String("cache", "vidcache", "path to video cache")
+	disableCache   = flag.Bool("disable-cache", false, "disable video cache")
+	disablePersist = flag.Bool("disable-persist", false, "disable queue persistence")
+	ytdlPath       = flag.String("ytdl", "yt-dlp", "path to youtube-dl")
+	ytdlFilter     = flag.String("ytdl-filter", "bestvideo[ext=mp4][height<=1080]+bestaudio/best", "youtube-dl filter")
+	maxUserQueue   = flag.Int("max-queue", 1, "maximum number of songs a user can queue")
+	noCompression  = flag.Bool("no-compression", false, "disable gzip compression")
+	sessionSecret  = flag.String("session-secret", "secret", "session secret")
+	clientID       = flag.String("client-id", "", "discord client ID (required)")
+	clientSecret   = flag.String("client-secret", "", "discord client secret (required)")
+	guildID        = flag.String("guild-id", "", "discord guild ID (required)")
+	ngrokDomain    = flag.String("ngrok-domain", "", "ngrok domain (required)")
+	ngrokToken     = flag.String("ngrok-token", "", "ngrok authtoken (required)")
 )
 
 // wraps with newlines if text is too long
@@ -110,16 +111,48 @@ func loopMPV(queue *mpvwebkaraoke.Queue, cache mpvwebkaraoke.OnceCache) {
 	}
 }
 
+func checkFlags() {
+	if *clientID == "" {
+		log.Fatal("client ID is required")
+	}
+
+	if *clientSecret == "" {
+		log.Fatal("client secret is required")
+	}
+
+	if *guildID == "" {
+		log.Fatal("guild ID is required")
+	}
+
+	if *ngrokDomain == "" {
+		log.Fatal("ngrok domain is required")
+	}
+
+	if *ngrokToken == "" {
+		log.Fatal("ngrok authtoken is required")
+	}
+}
+
 func main() {
 	flag.Parse()
+	checkFlags()
 	goutubedl.Path = *ytdlPath
 	queue := mpvwebkaraoke.NewQueue(*maxUserQueue)
+
+	if !*disablePersist {
+		err := queue.Start(context.Background())
+		if err != nil {
+			panic(err)
+		}
+	}
+
 	cacheConfig := mpvwebkaraoke.VideoCacheConfig{
 		CachePath:      *cachePath,
 		DownloadFilter: *ytdlFilter,
 	}
 
 	gob.Register(mpvwebkaraoke.User{})
+	gob.Register(mpvwebkaraoke.Song{})
 	vidCache := mpvwebkaraoke.NullCache
 	if !*disableCache {
 		err := os.MkdirAll(cacheConfig.CachePath, 0755)

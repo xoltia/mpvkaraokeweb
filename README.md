@@ -17,3 +17,18 @@ Use `--help` to see the available options.
 
 ## Building
 Use `make` to build the server. A static build will be output to `bin/mpvkaraoke`. Use Go's `GOOS` and `GOARCH` environment variables to cross-compile.
+
+## Running
+Run the server with `./bin/mpvkaraoke`. See `--help` for available options.
+
+Example usage including required flags:
+```sh
+mpvkaraoke
+    --session-secret=SOME_SECRET
+    --client-secret=DISCORD_APPLICATION_SECRET
+    --client-id=DISCORD_APPLICATION_ID
+    --guild-id=DISCORD_GUILD_ID
+    --ngrok-domain=NGROK_DOMAIN
+    --ngrok-token=NGROK_TOKEN
+    --disable-cache
+```
