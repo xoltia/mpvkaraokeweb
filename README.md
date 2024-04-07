@@ -23,12 +23,12 @@ Run the server with `./bin/mpvkaraoke`. See `--help` for available options.
 
 Example usage including required flags:
 ```sh
-mpvkaraoke
-    --session-secret=SOME_SECRET
-    --client-secret=DISCORD_APPLICATION_SECRET
-    --client-id=DISCORD_APPLICATION_ID
-    --guild-id=DISCORD_GUILD_ID
-    --ngrok-domain=NGROK_DOMAIN
-    --ngrok-token=NGROK_TOKEN
+mpvkaraoke \
+    --session-secret=SOME_SECRET \
+    --client-secret=DISCORD_APPLICATION_SECRET \
+    --client-id=DISCORD_APPLICATION_ID \
+    --guild-id=DISCORD_GUILD_ID \
+    --ngrok-domain=NGROK_DOMAIN \
+    --ngrok-token=NGROK_TOKEN \
     --disable-cache
 ```
