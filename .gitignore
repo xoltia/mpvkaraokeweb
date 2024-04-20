@@ -7,3 +7,4 @@ bin
 style/style.css
 *.gob
 *.key
+.devenv
